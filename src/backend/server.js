@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 
 // Import routes
 const llmsRoutes = require('./routes/llms');
@@ -31,6 +32,9 @@ const limiter = rateLimit({
 // Apply rate limiting to all requests
 app.use(limiter);
 
+// Serve static files from the frontend directory
+app.use(express.static(path.join(__dirname, '../../src/frontend')));
+
 // Routes
 app.use('/api', llmsRoutes);
 
@@ -54,8 +58,26 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    // Close database connections or other resources here if needed
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    // Close database connections or other resources here if needed
+    process.exit(0);
+  });
 });
 
 module.exports = app; // For testing 
