@@ -4,16 +4,9 @@ const llmsController = require('../controllers/llmsController');
 
 /**
  * @route POST /api/generate
- * @desc Generate LLMS.txt file based on website URL and company info
+ * @desc Generate LLMS.txt or LLMS-full.txt based on request parameters
  * @access Public
  */
-router.post('/generate', llmsController.generateLLMSTxt);
-
-/**
- * @route POST /api/generate-full
- * @desc Generate comprehensive LLMS-full.txt file and send via email
- * @access Public
- */
-router.post('/generate-full', llmsController.generateLLMSFullTxt);
+router.post('/generate', llmsController.generateLLMS);
 
 module.exports = router; 

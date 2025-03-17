@@ -301,7 +301,7 @@ Make sure the output is valid markdown and follows the LLMS.txt specification. D
 `;
 
     // Generate content with Gemini AI
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = result.response;
     const llmsContent = response.text();
@@ -353,7 +353,7 @@ Make sure the output is valid markdown and follows the LLMS.txt specification bu
 `;
 
     // Generate content with Gemini AI
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = result.response;
     const llmsFullContent = response.text();

@@ -24,22 +24,20 @@ exports.sendLLMSFullEmail = async (recipientEmail, companyName, llmsFullContent)
   try {
     // Create email options
     const mailOptions = {
-      from: `"LLMS.txt Generator" <${process.env.EMAIL_USER}>`,
+      from: `"Hawken LLMS.txt Generator" <${process.env.EMAIL_USER}>`,
       to: recipientEmail,
       subject: `Your LLMS-full.txt file for ${companyName}`,
       text: `
 Hello,
 
-Thank you for using our LLMS.txt Generator. Attached is your comprehensive LLMS-full.txt file for ${companyName}.
+Thank you for using Hawken's LLMS.txt Generator. Attached is your comprehensive LLMS-full.txt file for ${companyName}.
 
 You can save this file to your website's root directory as /llms-full.txt to make it accessible to AI systems.
 
-For reference, here's the content of your LLMS-full.txt file:
-
-${llmsFullContent}
+Your LLMS-full.txt file is attached below.
 
 Best regards,
-The LLMS.txt Generator Team
+The Hawken Team
       `,
       attachments: [
         {

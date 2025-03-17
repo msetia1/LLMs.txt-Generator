@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLMS.txt Generator | AI Startup Tool</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="logo-container">
+                <div class="logo">HawkenIO</div>
+            </div>
+            <nav>
+                <ul>
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#about">About</a></li>
+                    <li><a href="#contact" class="btn-primary">Contact</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <div class="hero-content">
+                    <h1>Everything you need to <span class="highlight">communicate</span> with AI</h1>
+                    <p class="subtitle">Generate valid and comprehensive llms.txt files for your AI startup website. Help AI systems understand your company better.</p>
+                    <a href="#generator" class="btn-primary">Generate your llms.txt</a>
+                </div>
+            </div>
+        </section>
+
+        <section id="generator" class="generator-section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>Generate your llms.txt File</h2>
+                </div>
+                
+                <div class="generator-container">
+                    <form id="llmsForm" class="generator-form">
+                        <div class="form-group">
+                            <label for="companyName">Company Name*</label>
+                            <input type="text" id="companyName" name="companyName" required placeholder="e.g., Acme AI">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="companyDescription">Company Description*</label>
+                            <textarea id="companyDescription" name="companyDescription" required placeholder="Briefly describe what your company does..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="websiteUrl">Website URL*</label>
+                            <input type="url" id="websiteUrl" name="websiteUrl" required placeholder="https://example.com">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="email">Email (required for comprehensive version)</label>
+                            <input type="email" id="email" name="email" placeholder="your@email.com">
+                        </div>
+                        
+                        <div class="form-group checkbox-group">
+                            <input type="checkbox" id="fullVersion" name="fullVersion">
+                            <label for="fullVersion">Generate comprehensive llms-full.txt (sent via email)</label>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="submit" class="btn-primary">Generate llms.txt</button>
+                            <div class="loader" id="loader"></div>
+                        </div>
+                    </form>
+                    
+                    <div class="result-container" id="resultContainer">
+                        <div class="result-header">
+                            <h3>Your llms.txt Content</h3>
+                            <button id="copyBtn" class="btn-secondary">Copy to Clipboard</button>
+                        </div>
+                        <pre id="resultContent" class="result-content">
+<span class="result-placeholder">Your llms.txt will appear here</span></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="features-section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>Key Features</h2>
+                </div>
+                
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">🤖</div>
+                        <h3>AI-Powered Generation</h3>
+                        <p>Uses advanced AI to create comprehensive llms.txt files tailored to your company.</p>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <div class="feature-icon">🔍</div>
+                        <h3>Website Crawling</h3>
+                        <p>Automatically analyzes your website to include relevant content and links.</p>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <div class="feature-icon">📱</div>
+                        <h3>Responsive Design</h3>
+                        <p>Works seamlessly on desktop, tablet, and mobile devices.</p>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <div class="feature-icon">📧</div>
+                        <h3>Email Delivery</h3>
+                        <p>Receive comprehensive LLMS-full.txt directly to your inbox.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="about" class="about-section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>About llms.txt</h2>
+                </div>
+                
+                <div class="about-content">
+                    <p>llms.txt is a standard file that helps AI systems better understand your company, products, and services. Similar to robots.txt for search engines, llms.txt provides structured information for large language models.</p>
+                    <p>By implementing llms.txt on your website, you can ensure that AI systems represent your company accurately and have access to the most relevant information about your offerings.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-logo">HawkenIO</div>
+                <p>© 2025 HawkenIO. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <div id="notification" class="notification"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html> 
