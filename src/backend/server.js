@@ -8,6 +8,10 @@ const path = require('path');
 
 // Import routes
 const llmsRoutes = require('./routes/llms');
+const adminRoutes = require('./routes/admin');
+
+// Import custom error handler
+const errorHandler = require('./utils/errorHandler');
 
 // Initialize express app
 const app = express();
@@ -37,6 +41,7 @@ app.use(express.static(path.join(__dirname, '../../src/frontend')));
 
 // Routes
 app.use('/api', llmsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -48,14 +53,8 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ 
-    error: 'Internal server error', 
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  });
-});
+// Custom error handler
+app.use(errorHandler);
 
 // Start server
 const server = app.listen(PORT, () => {

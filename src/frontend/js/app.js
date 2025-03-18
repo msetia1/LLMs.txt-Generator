@@ -69,27 +69,35 @@ function toggleEmailRequirement() {
  * Handle form submission
  * @param {Event} e - Form submit event
  */
-async function handleFormSubmit(e) {
+const handleFormSubmit = async (e) => {
     e.preventDefault();
     
-    // Show loader
-    loader.style.display = 'block';
-    
-    // Reset result content
-    resultContent.innerHTML = '<span class="result-placeholder">Your llms.txt will appear here</span>';
+    // Reset result content and remove error class if any
+    resultContent.textContent = '';
+    resultContent.classList.remove('error-content');
     resultContent.classList.remove('has-content');
+    
+    // Show loader
+    loader.style.display = 'flex';
     
     // Get form data
     const formData = new FormData(llmsForm);
+    
+    // Create data object
     const data = {
         companyName: formData.get('companyName'),
         companyDescription: formData.get('companyDescription'),
         websiteUrl: formData.get('websiteUrl'),
-        email: formData.get('email'),
-        fullVersion: formData.get('fullVersion') === 'on'
+        fullVersion: fullVersionCheckbox.checked
     };
     
+    // Add email if full version is selected
+    if (data.fullVersion) {
+        data.email = formData.get('email');
+    }
+    
     try {
+        // Call API to generate LLMS.txt
         const response = await fetch(API_URL, {
             method: 'POST',
             headers: {
@@ -98,10 +106,12 @@ async function handleFormSubmit(e) {
             body: JSON.stringify(data)
         });
         
+        // Get the response data
         const result = await response.json();
         
+        // Check if the response is an error
         if (!response.ok) {
-            throw new Error(result.message || 'Failed to generate LLMS.txt');
+            throw new Error(result.message || 'Failed to generate LLMS.txt', { cause: result });
         }
         
         if (data.fullVersion) {
@@ -116,12 +126,94 @@ async function handleFormSubmit(e) {
             resultContainer.scrollIntoView({ behavior: 'smooth' });
         }
     } catch (error) {
-        showNotification(error.message, 'error');
+        // Extract error details from the response
+        let errorMessage = error.message;
+        let errorType = 'General Error';
+        let suggestion = 'Please check your inputs and try again.';
+        
+        // Check if the error has a cause with additional error data
+        if (error.cause) {
+            const errorData = error.cause;
+            errorMessage = errorData.message || errorMessage;
+            errorType = errorData.error || errorType;
+            suggestion = errorData.suggestion || suggestion;
+        }
+        
+        // Show error in notification
+        showNotification(errorMessage, 'error');
+        
+        // Create appropriate error content based on error type
+        let errorContent = '';
+        let errorClass = '';
+        
+        if (errorType === 'Website Crawling Error') {
+            errorClass = 'crawling-error';
+            errorContent = `
+                <div class="error-message-box ${errorClass}">
+                    <h3>⚠️ Website Crawling Error</h3>
+                    <p>${errorMessage}</p>
+                    <p>${suggestion}</p>
+                    <div class="error-tips">
+                        <p><strong>Tips:</strong></p>
+                        <ul>
+                            <li>Check that the URL is correct and includes http:// or https://</li>
+                            <li>Verify the website is publicly accessible</li>
+                            <li>Try a different website if the issue persists</li>
+                        </ul>
+                    </div>
+                    <button class="btn-primary retry-btn">Try Again</button>
+                </div>
+            `;
+        } else if (errorType === 'Validation Error') {
+            errorClass = 'validation-error';
+            errorContent = `
+                <div class="error-message-box ${errorClass}">
+                    <h3>⚠️ Validation Error</h3>
+                    <p>${errorMessage}</p>
+                    <p>Please check your form inputs and try again.</p>
+                    <button class="btn-primary retry-btn">Try Again</button>
+                </div>
+            `;
+        } else if (errorType === 'Content Generation Error') {
+            errorClass = 'generation-error';
+            errorContent = `
+                <div class="error-message-box ${errorClass}">
+                    <h3>⚠️ Content Generation Error</h3>
+                    <p>${errorMessage}</p>
+                    <p>${suggestion}</p>
+                    <button class="btn-primary retry-btn">Try Again</button>
+                </div>
+            `;
+        } else {
+            // Default error message
+            errorContent = `
+                <div class="error-message-box">
+                    <h3>⚠️ Error Generating LLMS.txt</h3>
+                    <p>${errorMessage}</p>
+                    <p>${suggestion}</p>
+                    <button class="btn-primary retry-btn">Try Again</button>
+                </div>
+            `;
+        }
+        
+        resultContent.innerHTML = errorContent;
+        resultContent.classList.add('error-content');
+        
+        // Add event listener to the retry button
+        const retryBtn = resultContent.querySelector('.retry-btn');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', () => {
+                handleFormSubmit(e);
+            });
+        }
+        
+        // Scroll to result container to show the error
+        resultContainer.scrollIntoView({ behavior: 'smooth' });
     } finally {
         // Hide loader
         loader.style.display = 'none';
     }
-}
+};
 
 /**
  * Copy result content to clipboard

@@ -17,15 +17,35 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl) => {
   try {
     // Crawl the website to get important pages
-    const pages = await crawlWebsite(websiteUrl);
+    let pages;
+    try {
+      pages = await crawlWebsite(websiteUrl);
+      
+      if (!pages || pages.length === 0) {
+        throw new Error('Could not extract any content from the website. Please check the URL and ensure the website is accessible.');
+      }
+    } catch (crawlError) {
+      if (crawlError.message.includes('net::ERR_NAME_NOT_RESOLVED') || 
+          crawlError.message.includes('ENOTFOUND')) {
+        throw new Error(`Unable to access the website at ${websiteUrl}. Please verify the URL is correct and the website is online.`);
+      } else if (crawlError.message.includes('ERR_CONNECTION_TIMED_OUT') || 
+                 crawlError.message.includes('ETIMEDOUT')) {
+        throw new Error(`Connection to ${websiteUrl} timed out. The website may be slow or unavailable.`);
+      } else {
+        throw new Error(`Error crawling website: ${crawlError.message}`);
+      }
+    }
     
     // Generate LLMS.txt content using Gemini AI
-    const llmsContent = await generateLLMSContent(companyName, companyDescription, websiteUrl, pages);
-    
-    return llmsContent;
+    try {
+      const llmsContent = await generateLLMSContent(companyName, companyDescription, websiteUrl, pages);
+      return llmsContent;
+    } catch (aiError) {
+      throw new Error(`Error generating content with AI: ${aiError.message}`);
+    }
   } catch (error) {
     console.error('Error in LLMS.txt generation service:', error);
-    throw new Error('Failed to generate LLMS.txt content: ' + error.message);
+    throw error; // Rethrow the error with enhanced message for the controller
   }
 };
 

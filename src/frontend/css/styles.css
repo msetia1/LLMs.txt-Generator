@@ -492,4 +492,75 @@ footer {
         padding: 10px 16px;
         font-size: 0.9rem;
     }
+}
+
+/* Add styles for error state in results */
+.result-content.error-content {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(255, 235, 235, 0.5);
+    min-height: 200px;
+}
+
+.error-message-box {
+    max-width: 550px;
+    padding: 20px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.error-message-box h3 {
+    color: #e53935;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.3rem;
+}
+
+.error-message-box p {
+    margin-bottom: 15px;
+    color: #555;
+    line-height: 1.5;
+}
+
+.error-tips {
+    text-align: left;
+    background-color: #f9f9f9;
+    padding: 10px 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+.error-tips p {
+    margin-bottom: 8px;
+}
+
+.error-tips ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.error-tips li {
+    margin-bottom: 5px;
+    line-height: 1.4;
+}
+
+.retry-btn {
+    padding: 8px 20px;
+    margin-top: 10px;
+}
+
+/* Error types */
+.error-message-box.validation-error h3 {
+    color: #ff9800;
+}
+
+.error-message-box.crawling-error h3 {
+    color: #f44336;
+}
+
+.error-message-box.generation-error h3 {
+    color: #9c27b0;
 } 
