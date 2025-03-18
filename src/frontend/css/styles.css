@@ -51,7 +51,7 @@ a:hover {
     align-items: center;
     justify-content: center;
     background-color: var(--primary-color);
-    color: #000000;
+    color: #ffffff;
     font-weight: 600;
     padding: 12px 24px;
     border-radius: 4px;
@@ -303,6 +303,7 @@ textarea {
     resize: vertical;
 }
 
+/* Checkbox group styles */
 .checkbox-group {
     display: flex;
     align-items: center;
@@ -317,7 +318,16 @@ textarea {
     margin-bottom: 0;
 }
 
+/* Form actions */
 .form-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 30px;
+    width: 100%;
+}
+
+.action-right {
     display: flex;
     align-items: center;
     gap: 16px;
@@ -336,6 +346,73 @@ textarea {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+/* Toggle Switch */
+.toggle-group {
+    display: flex;
+    align-items: center;
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.toggle-label span {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-color);
+    margin-left: 10px;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border-color);
+    transition: .4s;
+    border-radius: 24px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--primary-color);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(26px);
 }
 
 .result-header {
@@ -384,6 +461,18 @@ textarea {
 
 .about-content p:last-child {
     margin-bottom: 0;
+}
+
+/* Blue link in about section */
+.about-content a {
+    color: #6578cb; /* Match the primary color */
+    text-decoration: underline;
+    font-weight: 500;
+}
+
+.about-content a:hover {
+    color: #3A56D4; /* Slightly darker on hover */
+    text-decoration: underline;
 }
 
 /* Footer */
@@ -472,6 +561,18 @@ footer {
     
     nav ul {
         gap: 20px;
+    }
+    
+    /* Adjust the form actions layout on mobile */
+    .form-actions {
+        flex-direction: column;
+        gap: 20px;
+        align-items: flex-start;
+    }
+    
+    .action-right {
+        width: 100%;
+        justify-content: flex-end;
     }
 }
 
@@ -563,4 +664,24 @@ footer {
 
 .error-message-box.generation-error h3 {
     color: #9c27b0;
+}
+
+/* Email field transition */
+.email-field {
+    max-height: 100px;
+    opacity: 1;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease, margin-bottom 0.3s ease;
+}
+
+.email-field.hidden {
+    max-height: 0;
+    opacity: 0;
+    margin-bottom: 0;
+    pointer-events: none;
+}
+
+/* Other hidden elements (if needed) */
+.visually-hidden {
+    display: none;
 } 

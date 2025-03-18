@@ -56,12 +56,18 @@ function setupSmoothScrolling() {
  * Toggle email field requirement based on fullVersion checkbox
  */
 function toggleEmailRequirement() {
+    const emailField = document.querySelector('.email-field');
+    
     if (fullVersionCheckbox.checked) {
+        // Show email field and make it required
+        emailField.classList.remove('hidden');
         emailInput.setAttribute('required', '');
-        emailInput.parentElement.querySelector('label').innerHTML = 'Email* (required for comprehensive version)';
     } else {
+        // Hide email field and remove required attribute
+        emailField.classList.add('hidden');
         emailInput.removeAttribute('required');
-        emailInput.parentElement.querySelector('label').innerHTML = 'Email (required for comprehensive version)';
+        // Clear the email value when hiding
+        emailInput.value = '';
     }
 }
 

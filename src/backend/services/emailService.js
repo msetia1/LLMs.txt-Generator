@@ -36,6 +36,9 @@ You can save this file to your website's root directory as /llms-full.txt to mak
 
 Your LLMS-full.txt file is attached below.
 
+Building an AI startup? If you’re ready to accelerate your roadmap, outpace competitors, and get to market faster than ever, let’s talk.
+Reply to this email to get in touch with our team.
+
 Best regards,
 The Hawken Team
       `,

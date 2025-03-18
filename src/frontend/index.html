@@ -11,13 +11,13 @@
     <header>
         <div class="container">
             <div class="logo-container">
-                <div class="logo">HawkenIO</div>
+                <div class="logo">HawkenAI</div>
             </div>
             <nav>
                 <ul>
                     <li><a href="#features">Features</a></li>
                     <li><a href="#about">About</a></li>
-                    <li><a href="#contact" class="btn-primary">Contact</a></li>
+                    <li><a href="https://hawken.ai/contact" class="btn-primary">Contact</a></li>
                 </ul>
             </nav>
         </div>
@@ -35,11 +35,7 @@
         </section>
 
         <section id="generator" class="generator-section">
-            <div class="container">
-                <div class="section-header">
-                    <h2>Generate your llms.txt File</h2>
-                </div>
-                
+            <div class="container">     
                 <div class="generator-container">
                     <form id="llmsForm" class="generator-form">
                         <div class="form-group">
@@ -57,19 +53,26 @@
                             <input type="url" id="websiteUrl" name="websiteUrl" required placeholder="https://example.com">
                         </div>
                         
-                        <div class="form-group">
-                            <label for="email">Email (required for comprehensive version)</label>
+                        <div class="form-group email-field hidden">
+                            <label for="email">Email* (required for llms-full.txt)</label>
                             <input type="email" id="email" name="email" placeholder="your@email.com">
                         </div>
                         
-                        <div class="form-group checkbox-group">
-                            <input type="checkbox" id="fullVersion" name="fullVersion">
-                            <label for="fullVersion">Generate comprehensive llms-full.txt (sent via email)</label>
-                        </div>
-                        
                         <div class="form-actions">
-                            <button type="submit" class="btn-primary">Generate llms.txt</button>
-                            <div class="loader" id="loader"></div>
+                            <div class="toggle-group">
+                                <label class="toggle-label" for="fullVersion">
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="fullVersion" name="fullVersion">
+                                        <span class="toggle-slider"></span>
+                                    </div>
+                                    <span>llms-full.txt</span>
+                                </label>
+                            </div>
+                            
+                            <div class="action-right">
+                                <button type="submit" class="btn-primary">Generate llms.txt</button>
+                                <div class="loader" id="loader"></div>
+                            </div>
                         </div>
                     </form>
                     
@@ -126,8 +129,9 @@
                 </div>
                 
                 <div class="about-content">
-                    <p>llms.txt is a standard file that helps AI systems better understand your company, products, and services. Similar to robots.txt for search engines, llms.txt provides structured information for large language models.</p>
+                    <p>llms.txt is a standard file that helps AI systems better understand your company, products, and services. Similar to robots.txt for search engines, llms.txt provides structured information for large language models when crawling your website.</p>
                     <p>By implementing llms.txt on your website, you can ensure that AI systems represent your company accurately and have access to the most relevant information about your offerings.</p>
+                    <p>To learn more about llms.txt, go to <a href="https://llmstxt.org" target="_blank" rel="noopener noreferrer">llmstxt.org</a></p>
                 </div>
             </div>
         </section>
@@ -136,8 +140,7 @@
     <footer>
         <div class="container">
             <div class="footer-content">
-                <div class="footer-logo">HawkenIO</div>
-                <p>© 2025 HawkenIO. All rights reserved.</p>
+                <p>© 2025 HawkenAI. All rights reserved.</p>
             </div>
         </div>
     </footer>
