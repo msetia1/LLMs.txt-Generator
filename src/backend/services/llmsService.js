@@ -77,12 +77,23 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
  * @returns {Promise<Array>} - Array of page objects with title, url, and content
  */
 async function crawlWebsite(websiteUrl) {
-  const browser = await playwright.chromium.launch();
+  const browser = await playwright.chromium.launch({
+    headless: true,
+    timeout: 60000 // Increase timeout to 1 minute
+  });
   const context = await browser.newContext();
   const page = await context.newPage();
   
   try {
-    await page.goto(websiteUrl, { waitUntil: 'domcontentloaded' });
+    console.log(`Crawling website: ${websiteUrl}`);
+    // Increase timeout and wait until network is idle
+    await page.goto(websiteUrl, { 
+      waitUntil: 'networkidle',
+      timeout: 30000 // 30 seconds timeout for page load
+    });
+    
+    // Wait a bit for any JavaScript to execute
+    await page.waitForTimeout(2000);
     
     // Extract links from the main page
     const links = await page.evaluate(() => {
@@ -95,8 +106,13 @@ async function crawlWebsite(websiteUrl) {
         .filter(link => link.url && link.url.startsWith(window.location.origin));
     });
     
+    if (links.length === 0) {
+      console.log('No links found on the page. This might indicate an issue with the website structure or JavaScript rendering.');
+    }
+    
     // Filter and prioritize important pages
     const importantLinks = prioritizeLinks(links, websiteUrl);
+    console.log(`Found ${importantLinks.length} important links to crawl.`);
     
     // Limit to top 10 most important pages to keep processing time reasonable
     const pagesToVisit = importantLinks.slice(0, 10);
@@ -105,7 +121,12 @@ async function crawlWebsite(websiteUrl) {
     const pages = [];
     for (const linkObj of pagesToVisit) {
       try {
-        await page.goto(linkObj.url, { waitUntil: 'domcontentloaded' });
+        console.log(`Visiting page: ${linkObj.url}`);
+        
+        await page.goto(linkObj.url, { 
+          waitUntil: 'networkidle',
+          timeout: 15000 // 15 seconds timeout for each subpage
+        });
         
         // Extract page title and main content
         const pageData = await page.evaluate(() => {
@@ -113,31 +134,43 @@ async function crawlWebsite(websiteUrl) {
           const title = document.title;
           
           // Get main content (prioritize main, article, or content divs)
-          let content = '';
+          let mainContent = '';
           const mainElement = document.querySelector('main') || 
-                             document.querySelector('article') || 
-                             document.querySelector('#content') ||
-                             document.querySelector('.content');
+                            document.querySelector('article') || 
+                            document.querySelector('.content') ||
+                            document.querySelector('#content') ||
+                            document.body;
           
           if (mainElement) {
-            content = mainElement.textContent;
-          } else {
-            // Fallback to body content, excluding scripts, styles, etc.
-            const bodyText = document.body.innerText;
-            content = bodyText.substring(0, 5000); // Limit content length
+            // Strip out scripts, styles, and hidden elements
+            const elementsToExclude = mainElement.querySelectorAll('script, style, [style*="display: none"], [style*="display:none"]');
+            elementsToExclude.forEach(el => {
+              if (el.parentNode) {
+                el.parentNode.removeChild(el);
+              }
+            });
+            
+            mainContent = mainElement.textContent.trim().replace(/\s+/g, ' ');
           }
           
-          return { title, content };
+          return {
+            title,
+            content: mainContent,
+          };
         });
         
-        pages.push({
-          title: pageData.title,
-          url: linkObj.url,
-          content: pageData.content.substring(0, 1000) // Limit content for basic version
-        });
+        // Add the page to our results if it has content
+        if (pageData.content && pageData.content.length > 100) {
+          pages.push({
+            title: pageData.title,
+            url: linkObj.url,
+            content: pageData.content.substring(0, 5000) // Limit content size
+          });
+        }
       } catch (error) {
-        console.error(`Error visiting page ${linkObj.url}:`, error);
-        // Continue with other pages
+        console.error(`Error visiting page ${linkObj.url}:`, error.message);
+        // Continue with next page
+        continue;
       }
     }
     

@@ -1,6 +1,6 @@
 /* Base Styles */
 :root {
-    --primary-color: #4361EE;
+    --primary-color: #314FFB;
     --primary-hover: #3A56D4;
     --background-color: #0f0f0f;
     --secondary-bg: #1a1a1a;
@@ -167,7 +167,7 @@ h1 {
 
 /* Section Styles */
 section {
-    padding: 80px 0;
+    padding: 60px 0;
 }
 
 .section-header {
@@ -195,6 +195,10 @@ h3 {
 }
 
 /* Generator Section */
+.generator-section {
+    padding-top: 40px;
+}
+
 .generator-container {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -231,22 +235,70 @@ h3 {
     border-radius: 4px;
     white-space: pre-wrap;
     overflow-x: auto;
-    overflow-y: auto; /* Re-add vertical scrolling */
+    overflow-y: auto; /* Enable vertical scrolling */
     flex-grow: 1; /* Allow content to grow and fill available space */
-    min-height: 300px; /* Minimum height to match form approximately */
-    max-height: 100%; /* Ensure it doesn't overflow its container */
+    height: 375px; /* Default height */
+    min-height: 375px; 
+    max-height: 375px; /* Default maximum height */
     font-family: monospace;
     font-size: 0.9rem;
     line-height: 1.5;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    position: relative; /* For loader positioning */
+    transition: height 0.3s ease, max-height 0.3s ease, min-height 0.3s ease; /* Add transition for smooth height changes */
+}
+
+/* Add a class for when the email field is visible */
+.result-content.expanded {
+    height: 475px; /* Increased height to match expanded form */
+    min-height: 475px;
+    max-height: 475px;
 }
 
 .result-content.has-content {
     display: block;
     align-items: initial;
     justify-content: initial;
+}
+
+/* Loading state for result content */
+.result-content.loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.loading-text {
+    margin-top: 20px;
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    font-family: 'Inter', sans-serif;
+    font-style: italic;
+}
+
+.loader {
+    width: 50px;
+    height: 50px;
+    border: 4px solid var(--secondary-bg);
+    border-radius: 50%;
+    border-top: 4px solid var(--primary-color);
+    animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 .form-group {
@@ -303,6 +355,15 @@ textarea {
     resize: vertical;
 }
 
+/* Fixed size description box with scrolling */
+#companyDescription {
+    height: 120px;
+    min-height: 120px;
+    max-height: 120px;
+    resize: none;
+    overflow-y: auto;
+}
+
 /* Checkbox group styles */
 .checkbox-group {
     display: flex;
@@ -333,21 +394,6 @@ textarea {
     gap: 16px;
 }
 
-.loader {
-    display: none;
-    width: 24px;
-    height: 24px;
-    border: 3px solid var(--secondary-bg);
-    border-radius: 50%;
-    border-top: 3px solid var(--primary-color);
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
 /* Toggle Switch */
 .toggle-group {
     display: flex;
@@ -372,8 +418,8 @@ textarea {
 .toggle-switch {
     position: relative;
     display: inline-block;
-    width: 50px;
-    height: 24px;
+    width: 60px;
+    height: 26px;
     flex-shrink: 0;
 }
 
@@ -390,29 +436,31 @@ textarea {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: var(--border-color);
-    transition: .4s;
-    border-radius: 24px;
+    background-color: #1a1a1a;
+    transition: .3s;
+    border-radius: 34px;
 }
 
 .toggle-slider:before {
     position: absolute;
     content: "";
-    height: 16px;
-    width: 16px;
-    left: 4px;
-    bottom: 4px;
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
     background-color: white;
-    transition: .4s;
+    transition: .3s;
     border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 input:checked + .toggle-slider {
-    background-color: var(--primary-color);
+    background-color: #4361EE;
 }
 
 input:checked + .toggle-slider:before {
-    transform: translateX(26px);
+    transform: translateX(24px) translateY(-50%);
 }
 
 .result-header {
@@ -475,23 +523,78 @@ input:checked + .toggle-slider:before {
     text-decoration: underline;
 }
 
+/* CTA Section */
+.cta-section {
+    padding: 70px 0;
+    background-color: var(--background-color);
+}
+
+.cta-content {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.cta-title {
+    font-size: 4rem;
+    line-height: 1.1;
+    margin-bottom: 25px;
+    font-weight: 700;
+}
+
+.cta-subtitle {
+    font-size: 1.3rem;
+    color: var(--text-secondary);
+    margin-bottom: 40px;
+    max-width: 800px;
+}
+
+.cta-section .btn-primary {
+    display: inline-block;
+    font-size: 1.1rem;
+    padding: 14px 30px;
+}
+
+@media (max-width: 768px) {
+    .cta-title {
+        font-size: 3rem;
+    }
+    
+    .cta-subtitle {
+        font-size: 1.1rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .cta-title {
+        font-size: 2.5rem;
+    }
+    
+    .cta-section {
+        padding: 50px 0;
+    }
+}
+
 /* Footer */
 footer {
     padding: 40px 0;
-    border-top: 1px solid var(--border-color);
 }
 
 .footer-content {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     gap: 16px;
-    text-align: center;
+    text-align: left;
 }
 
 .footer-logo {
     font-size: 1.25rem;
     font-weight: 700;
+}
+
+.footer-content p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
 }
 
 /* Notification */
@@ -538,7 +641,15 @@ footer {
     }
     
     .result-content {
-        min-height: 200px; /* Smaller minimum height on mobile */
+        height: 300px; /* Slightly smaller fixed height on mobile but still sufficient */
+        min-height: 300px;
+        max-height: 300px;
+    }
+    
+    .result-content.expanded {
+        height: 400px; /* Adjusted expanded height for mobile */
+        min-height: 400px;
+        max-height: 400px;
     }
 }
 
@@ -556,7 +667,7 @@ footer {
     }
     
     section {
-        padding: 60px 0;
+        padding: 50px 0;
     }
     
     nav ul {
@@ -573,6 +684,10 @@ footer {
     .action-right {
         width: 100%;
         justify-content: flex-end;
+    }
+    
+    .generator-section {
+        padding-top: 30px;
     }
 }
 
@@ -592,6 +707,10 @@ footer {
     .btn-primary {
         padding: 10px 16px;
         font-size: 0.9rem;
+    }
+    
+    .generator-section {
+        padding-top: 25px;
     }
 }
 

@@ -17,6 +17,11 @@ document.addEventListener('DOMContentLoaded', () => {
     copyBtn.addEventListener('click', copyToClipboard);
     fullVersionCheckbox.addEventListener('change', toggleEmailRequirement);
     
+    // Check initial state of fullVersion checkbox
+    if (fullVersionCheckbox.checked) {
+        resultContent.classList.add('expanded');
+    }
+    
     // Add smooth scrolling for all navigation links
     setupSmoothScrolling();
 });
@@ -62,12 +67,16 @@ function toggleEmailRequirement() {
         // Show email field and make it required
         emailField.classList.remove('hidden');
         emailInput.setAttribute('required', '');
+        // Expand the result content area to match
+        resultContent.classList.add('expanded');
     } else {
         // Hide email field and remove required attribute
         emailField.classList.add('hidden');
         emailInput.removeAttribute('required');
         // Clear the email value when hiding
         emailInput.value = '';
+        // Return result content to normal size
+        resultContent.classList.remove('expanded');
     }
 }
 
@@ -78,13 +87,25 @@ function toggleEmailRequirement() {
 const handleFormSubmit = async (e) => {
     e.preventDefault();
     
-    // Reset result content and remove error class if any
-    resultContent.textContent = '';
+    // Reset result content and remove any previous classes
     resultContent.classList.remove('error-content');
     resultContent.classList.remove('has-content');
+    resultContent.classList.add('loading');
     
-    // Show loader
-    loader.style.display = 'flex';
+    // Maintain expanded state if fullVersion is checked
+    if (fullVersionCheckbox.checked) {
+        resultContent.classList.add('expanded');
+    } else {
+        resultContent.classList.remove('expanded');
+    }
+    
+    // Update content to show loading state with spinner
+    resultContent.innerHTML = `
+        <div class="loading-container">
+            <div class="loader" id="loader"></div>
+            <span class="loading-text">Generating your llms.txt file...</span>
+        </div>
+    `;
     
     // Get form data
     const formData = new FormData(llmsForm);
@@ -216,8 +237,9 @@ const handleFormSubmit = async (e) => {
         // Scroll to result container to show the error
         resultContainer.scrollIntoView({ behavior: 'smooth' });
     } finally {
-        // Hide loader
-        loader.style.display = 'none';
+        // Remove loading state
+        resultContent.classList.remove('loading');
+        // We no longer need to hide the loader manually as it's part of the content that gets replaced
     }
 };
 

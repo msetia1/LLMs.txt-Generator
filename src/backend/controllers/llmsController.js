@@ -10,6 +10,9 @@ const supabase = require('../utils/supabaseClient');
  * @param {Function} next - Express next middleware function
  */
 exports.generateLLMS = async (req, res, next) => {
+  // Initialize generationId at the beginning of the function
+  let generationId = null;
+  
   try {
     const { companyName, companyDescription, websiteUrl, email, fullVersion } = req.body;
     
@@ -18,20 +21,20 @@ exports.generateLLMS = async (req, res, next) => {
       return res.status(400).json({
         success: false,
         error: 'Missing required fields',
-        message: 'Company name, description, and website URL are required'
+        message: 'Company name, description, and website URL are required.'
       });
     }
-
-    // Validate URL
+    
+    // Validate website URL format
     if (!validator.isURL(websiteUrl, { require_protocol: true })) {
       return res.status(400).json({
         success: false,
         error: 'Invalid URL',
-        message: 'Please provide a valid website URL (including http:// or https://)'
+        message: 'Please provide a valid website URL including http:// or https://'
       });
     }
     
-    // Create a record in the database
+    // Insert a record into the database for this generation attempt
     const { data: generationData, error: insertError } = await supabase
       .from('llms_generations')
       .insert({
@@ -48,7 +51,8 @@ exports.generateLLMS = async (req, res, next) => {
       throw new Error(`Database error: ${insertError.message}`);
     }
     
-    const generationId = generationData[0].id;
+    // Set the generationId variable so it's available in the catch block
+    generationId = generationData[0].id;
     
     // If fullVersion is true, validate email and generate LLMS-full.txt
     if (fullVersion === true) {
