@@ -1,61 +1,53 @@
-const nodemailer = require('nodemailer');
+const Mailgun = require('mailgun.js');
+const formData = require('form-data');
+const mailgun = new Mailgun(formData);
+const mg = mailgun.client({ username: 'api', key: process.env.MAILGUN_API_KEY });
 
 /**
  * Email service for sending LLMS-full.txt files
  */
 
-// Create reusable transporter object using environment variables
-const transporter = nodemailer.createTransport({
-  service: process.env.EMAIL_SERVICE,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
-
 /**
- * Send an email with the LLMS-full.txt content
+ * Send an email with the LLMS-full.txt content using Mailgun
  * @param {string} recipientEmail - Email address to send to
  * @param {string} companyName - Name of the company
  * @param {string} llmsFullContent - Generated LLMS-full.txt content
- * @returns {Promise<Object>} - Nodemailer send mail response
+ * @returns {Promise<Object>} - Mailgun send response
  */
 exports.sendLLMSFullEmail = async (recipientEmail, companyName, llmsFullContent) => {
   try {
-    // Create email options
-    const mailOptions = {
-      from: `"Hawken LLMS.txt Generator" <${process.env.EMAIL_USER}>`,
+    // Create email data
+    const messageData = {
+      from: `HawkenAI llms.txt Generator <john@hawkenio.com>`,
       to: recipientEmail,
-      subject: `Your LLMS-full.txt file for ${companyName}`,
+      subject: `Your llms-full.txt file for ${companyName}`,
       text: `
 Hello,
 
-Thank you for using Hawken's LLMS.txt Generator. Attached is your comprehensive LLMS-full.txt file for ${companyName}.
+Thank you for using Hawken's llms.txt Generator. Attached is your comprehensive llms-full.txt file for ${companyName}.
 
 You can save this file to your website's root directory as /llms-full.txt to make it accessible to AI systems.
 
-Your LLMS-full.txt file is attached below.
-
-Building an AI startup? If you’re ready to accelerate your roadmap, outpace competitors, and get to market faster than ever, let’s talk.
-Reply to this email to get in touch with our team.
+Building an AI startup? If you're ready to accelerate your roadmap, outpace competitors, and get to market faster than ever, let's talk.
+Reply to this email to get in touch with us.
 
 Best regards,
 The Hawken Team
       `,
-      attachments: [
+      attachment: [
         {
           filename: 'llms-full.txt',
-          content: llmsFullContent
+          data: Buffer.from(llmsFullContent)
         }
       ]
     };
 
-    // Send email
-    const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent:', info.messageId);
-    return info;
+    // Send email using Mailgun
+    const result = await mg.messages.create(process.env.MAILGUN_DOMAIN, messageData);
+    console.log('Email sent with Mailgun:', result.id);
+    return result;
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('Error sending email with Mailgun:', error);
     throw new Error('Failed to send email: ' + error.message);
   }
 };
@@ -66,7 +58,13 @@ The Hawken Team
  */
 exports.verifyEmailConfig = async () => {
   try {
-    await transporter.verify();
+    // Simple check to see if Mailgun API key and domain are configured
+    if (!process.env.MAILGUN_API_KEY || !process.env.MAILGUN_DOMAIN) {
+      return false;
+    }
+    
+    // We can't easily verify Mailgun credentials without sending a test email
+    // So we'll just check if the credentials exist
     return true;
   } catch (error) {
     console.error('Email configuration error:', error);

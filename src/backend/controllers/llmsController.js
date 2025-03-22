@@ -17,11 +17,11 @@ exports.generateLLMS = async (req, res, next) => {
     const { companyName, companyDescription, websiteUrl, email, fullVersion } = req.body;
     
     // Validate required fields
-    if (!companyName || !companyDescription || !websiteUrl) {
+    if (!companyName || !websiteUrl) {
       return res.status(400).json({
         success: false,
         error: 'Missing required fields',
-        message: 'Company name, description, and website URL are required.'
+        message: 'Company name and website URL are required.'
       });
     }
     
@@ -71,6 +71,15 @@ exports.generateLLMS = async (req, res, next) => {
           success: false,
           error: 'Invalid email',
           message: 'Please provide a valid email address'
+        });
+      }
+      
+      // Check if Mailgun is configured
+      if (!process.env.MAILGUN_API_KEY || !process.env.MAILGUN_DOMAIN) {
+        return res.status(500).json({
+          success: false,
+          error: 'Email service not configured',
+          message: 'Email service not configured. Please set MAILGUN_API_KEY and MAILGUN_DOMAIN in .env file.'
         });
       }
       

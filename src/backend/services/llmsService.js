@@ -334,7 +334,7 @@ async function generateLLMSContent(companyName, companyDescription, websiteUrl, 
     
     // Create prompt for Gemini AI
     const prompt = `
-Generate a valid LLMS.txt file for an AI startup with the following information:
+Generate a valid LLMS.txt file for an AI startup with the following information. Output the raw markdown content ONLY without any surrounding code block syntax or \`\`\`markdown tags:
 
 Company Name: ${companyName}
 Company Description: ${companyDescription}
@@ -350,14 +350,17 @@ The LLMS.txt file should follow this format:
 4. Include sections with H2 headers for different categories of links
 5. Under each section, include markdown links to important pages with brief descriptions
 
-Make sure the output is valid markdown and follows the LLMS.txt specification. Do not include any hallucinations or fake pages. Only include real pages from the provided list. The output should be ready to use as an LLMS.txt file without any additional formatting or explanation.
+Make sure the output is valid markdown and follows the LLMS.txt specification. Do not include any hallucinations or fake pages. Only include real pages from the provided list. The output should be ready to use as an LLMS.txt file without any additional formatting, explanation, or markdown code block syntax (\`\`\`).
 `;
 
     // Generate content with Gemini AI
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = result.response;
-    const llmsContent = response.text();
+    let llmsContent = response.text();
+    
+    // Comprehensive method to clean markdown code blocks
+    llmsContent = cleanMarkdownCodeBlocks(llmsContent);
     
     return llmsContent;
   } catch (error) {
@@ -384,7 +387,7 @@ async function generateLLMSFullContent(companyName, companyDescription, websiteU
     
     // Create more detailed prompt for Gemini AI
     const prompt = `
-Generate a comprehensive LLMS-full.txt file for an AI startup with the following information:
+Generate a comprehensive LLMS-full.txt file for an AI startup with the following information. Output the raw markdown content ONLY without any surrounding code block syntax or \`\`\`markdown tags:
 
 Company Name: ${companyName}
 Company Description: ${companyDescription}
@@ -402,18 +405,46 @@ The LLMS-full.txt file should be more comprehensive than a standard LLMS.txt fil
 6. Include content summaries where appropriate
 7. Organize information in a way that would be most useful for AI systems
 
-Make sure the output is valid markdown and follows the LLMS.txt specification but with more comprehensive content. Do not include any hallucinations or fake pages. Only include real pages from the provided list. The output should be ready to use as an LLMS-full.txt file without any additional formatting or explanation.
+Make sure the output is valid markdown and follows the LLMS.txt specification but with more comprehensive content. Do not include any hallucinations or fake pages. Only include real pages from the provided list. The output should be ready to use as an LLMS-full.txt file without any additional formatting, explanation, or markdown code block syntax (\`\`\`).
 `;
 
     // Generate content with Gemini AI
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = result.response;
-    const llmsFullContent = response.text();
+    let llmsFullContent = response.text();
+    
+    // Comprehensive method to clean markdown code blocks
+    llmsFullContent = cleanMarkdownCodeBlocks(llmsFullContent);
     
     return llmsFullContent;
   } catch (error) {
     console.error('Error generating LLMS-full content with Gemini AI:', error);
     throw new Error('Failed to generate LLMS-full.txt content with AI: ' + error.message);
   }
+}
+
+/**
+ * Clean markdown code block syntax from text
+ * @param {string} text - The text to clean
+ * @returns {string} - Cleaned text without markdown code block syntax
+ */
+function cleanMarkdownCodeBlocks(text) {
+  // First attempt: Try to match the entire content between markdown code blocks
+  const fullBlockMatch = text.match(/```markdown\s*([\s\S]*?)\s*```/);
+  if (fullBlockMatch && fullBlockMatch[1]) {
+    // If we found a full markdown code block, return just the content
+    return fullBlockMatch[1].trim();
+  }
+  
+  // If we didn't find a full block match, try removing parts individually
+  let cleanedText = text;
+  
+  // Remove opening ```markdown (case insensitive, with or without newline)
+  cleanedText = cleanedText.replace(/```markdown\s*/gi, '');
+  
+  // Remove any remaining ``` (typically closing tags)
+  cleanedText = cleanedText.replace(/```\s*/g, '');
+  
+  return cleanedText.trim();
 } 

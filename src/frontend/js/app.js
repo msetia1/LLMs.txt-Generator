@@ -19,7 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Check initial state of fullVersion checkbox
     if (fullVersionCheckbox.checked) {
-        resultContent.classList.add('expanded');
+        // Set the initial state of email requirement
+        toggleEmailRequirement();
     }
     
     // Add smooth scrolling for all navigation links
@@ -61,22 +62,16 @@ function setupSmoothScrolling() {
  * Toggle email field requirement based on fullVersion checkbox
  */
 function toggleEmailRequirement() {
-    const emailField = document.querySelector('.email-field');
+    const emailRequiredText = document.getElementById('emailRequiredText');
     
     if (fullVersionCheckbox.checked) {
-        // Show email field and make it required
-        emailField.classList.remove('hidden');
+        // Make email field required
         emailInput.setAttribute('required', '');
-        // Expand the result content area to match
-        resultContent.classList.add('expanded');
+        emailRequiredText.style.color = 'var(--error-color)';
     } else {
-        // Hide email field and remove required attribute
-        emailField.classList.add('hidden');
+        // Remove required attribute
         emailInput.removeAttribute('required');
-        // Clear the email value when hiding
-        emailInput.value = '';
-        // Return result content to normal size
-        resultContent.classList.remove('expanded');
+        emailRequiredText.style.color = 'var(--text-secondary)';
     }
 }
 
@@ -91,13 +86,6 @@ const handleFormSubmit = async (e) => {
     resultContent.classList.remove('error-content');
     resultContent.classList.remove('has-content');
     resultContent.classList.add('loading');
-    
-    // Maintain expanded state if fullVersion is checked
-    if (fullVersionCheckbox.checked) {
-        resultContent.classList.add('expanded');
-    } else {
-        resultContent.classList.remove('expanded');
-    }
     
     // Update content to show loading state with spinner
     resultContent.innerHTML = `
