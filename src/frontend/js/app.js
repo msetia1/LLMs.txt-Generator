@@ -212,12 +212,27 @@ async function submitFormData(data) {
         }
         
         if (data.fullVersion) {
-            // For full version, show success message
+            // For full version, show success message in notification
             showNotification(`Your comprehensive LLMS-full.txt file is being generated and will be sent to ${data.email} when ready.`, 'success');
+            
+            // Also update the result content area with a friendly message styled like the placeholder
+            resultContent.innerHTML = `
+                <div class="email-notification">
+                    <h3>Request Received</h3>
+                    <p>Your llms-full.txt file is being generated.<br>You'll receive an email once it's ready.</p>
+                    <h3>${data.email}</h3>
+                </div>
+            `;
+            resultContent.classList.add('has-content');
+            resultContent.classList.add('email-notification-container');
+            
+            // Scroll to result container
+            resultContainer.scrollIntoView({ behavior: 'smooth' });
         } else {
             // For standard version, display the content
             resultContent.textContent = result.data.content;
             resultContent.classList.add('has-content');
+            resultContent.classList.remove('email-notification-container');
             
             // Scroll to result container
             resultContainer.scrollIntoView({ behavior: 'smooth' });

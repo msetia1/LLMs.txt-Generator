@@ -70,4 +70,52 @@ exports.verifyEmailConfig = async () => {
     console.error('Email configuration error:', error);
     return false;
   }
+};
+
+/**
+ * Send an error notification email to the user
+ * @param {string} recipientEmail - Email address to send to
+ * @param {string} companyName - Name of the company
+ * @param {string} errorMessage - Specific error message to include
+ * @returns {Promise<Object>} - Mailgun send response
+ */
+exports.sendErrorEmail = async (recipientEmail, companyName, errorMessage) => {
+  try {
+    // Create email data for error notification
+    const messageData = {
+      from: `HawkenAI llms.txt Generator <john@hawkenio.com>`,
+      to: recipientEmail,
+      subject: `Issue with your llms-full.txt generation for ${companyName}`,
+      text: `
+Hello,
+
+We encountered an issue while generating your llms-full.txt file for ${companyName}.
+
+${errorMessage}
+
+Possible reasons for this issue:
+- The website might be inaccessible or blocking our crawler
+- The website might have complex JavaScript that our crawler couldn't process
+- There might be insufficient content on the website to generate a comprehensive file
+
+You can try again with these suggestions:
+- Ensure your website is publicly accessible
+- Provide a more detailed company description
+- Try a different URL from your website that contains more information
+
+Need help? Reply to this email and we'll assist you further.
+
+Best regards,
+The Hawken Team
+      `
+    };
+
+    // Send email using Mailgun
+    const result = await mg.messages.create(process.env.MAILGUN_DOMAIN, messageData);
+    console.log('Error notification email sent with Mailgun:', result.id);
+    return result;
+  } catch (error) {
+    console.error('Error sending notification email with Mailgun:', error);
+    throw new Error('Failed to send error notification email: ' + error.message);
+  }
 }; 

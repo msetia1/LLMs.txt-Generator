@@ -3,73 +3,188 @@ const cheerio = require('cheerio');
 const axios = require('axios');
 const playwright = require('playwright');
 const urlUtils = require('../utils/urlUtils');
+const fs = require('fs').promises;
+const path = require('path');
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Google Generative AI with API key
+const apiKey = process.env.GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(apiKey);
 
 /**
- * Generate LLMS.txt content based on company info and website
+ * Enhanced logging system for LLMS generator
+ * @param {string} level - Log level (info, warn, error, debug)
+ * @param {string} message - Message to log
+ * @param {Object} [data] - Optional data to include in log
+ */
+async function logActivity(level, message, data = null) {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    level,
+    message,
+    ...(data ? { data } : {})
+  };
+  
+  // Console output for immediate visibility
+  const logColors = {
+    info: '\x1b[32m', // green
+    warn: '\x1b[33m', // yellow
+    error: '\x1b[31m', // red
+    debug: '\x1b[36m'  // cyan
+  };
+  
+  const resetColor = '\x1b[0m';
+  console.log(`${logColors[level] || ''}[${timestamp}][${level.toUpperCase()}] ${message}${resetColor}`);
+  
+  if (data) {
+    console.log(data);
+  }
+  
+  try {
+    // Create logs directory if it doesn't exist
+    const logsDir = path.join(__dirname, '../../logs');
+    await fs.mkdir(logsDir, { recursive: true });
+    
+    // Write to file based on date
+    const today = new Date().toISOString().split('T')[0];
+    const logFile = path.join(logsDir, `llms-generator-${today}.log`);
+    
+    // Append to log file
+    await fs.appendFile(
+      logFile, 
+      JSON.stringify(logEntry) + '\n',
+      'utf8'
+    );
+  } catch (err) {
+    console.error('Error writing to log file:', err);
+  }
+}
+
+/**
+ * Get the appropriate Gemini model based on the task complexity
+ * @param {string} modelType - 'standard' or 'advanced' based on task needs
+ * @returns {object} - Configured Gemini model
+ */
+function getGeminiModel(modelType = 'standard') {
+  // Options for generation configuration
+  const standardConfig = {
+    temperature: 0.2,  // Lower temperature for more consistent outputs
+    maxOutputTokens: 8000,
+    topP: 0.9,
+    topK: 40
+  };
+  
+  const advancedConfig = {
+    temperature: 0.2,
+    maxOutputTokens: 30000,  // Much larger for comprehensive outputs
+    topP: 0.95,
+    topK: 40
+  };
+  
+  // Use Pro model for advanced tasks (like LLMS-full.txt generation)
+  if (modelType === 'advanced') {
+    return genAI.getGenerativeModel({ 
+      model: "gemini-2.0-flash",
+      generationConfig: advancedConfig
+    });
+  }
+  
+  // Use standard model for regular tasks (like LLMS.txt generation)
+  return genAI.getGenerativeModel({ 
+    model: "gemini-2.0-flash",
+    generationConfig: standardConfig
+  });
+}
+
+/**
+ * Generate LLMS.txt file for a company website
  * @param {string} companyName - Name of the company
  * @param {string} companyDescription - Description of the company
  * @param {string} websiteUrl - URL of the company website
+ * @param {string} email - Email address for notification
  * @returns {Promise<string>} - Generated LLMS.txt content
  */
-exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl) => {
+exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl, email) => {
+  await logActivity('info', 'Starting LLMS.txt generation', { 
+    companyName, websiteUrl, email 
+  });
+  
   try {
-    // Crawl the website to get important pages
-    let pages;
-    try {
-      pages = await crawlWebsite(websiteUrl);
-      
-      if (!pages || pages.length === 0) {
-        throw new Error('Could not extract any content from the website. Please check the URL and ensure the website is accessible.');
-      }
-    } catch (crawlError) {
-      if (crawlError.message.includes('net::ERR_NAME_NOT_RESOLVED') || 
-          crawlError.message.includes('ENOTFOUND')) {
-        throw new Error(`Unable to access the website at ${websiteUrl}. Please verify the URL is correct and the website is online.`);
-      } else if (crawlError.message.includes('ERR_CONNECTION_TIMED_OUT') || 
-                 crawlError.message.includes('ETIMEDOUT')) {
-        throw new Error(`Connection to ${websiteUrl} timed out. The website may be slow or unavailable.`);
-      } else {
-        throw new Error(`Error crawling website: ${crawlError.message}`);
-      }
-    }
+    // Validate and normalize URL
+    const normalizedUrl = urlUtils.normalizeUrl(websiteUrl);
+    await logActivity('debug', 'Normalized URL for crawling', { 
+      original: websiteUrl, normalized: normalizedUrl 
+    });
     
-    // Generate LLMS.txt content using Gemini AI
-    try {
-      const llmsContent = await generateLLMSContent(companyName, companyDescription, websiteUrl, pages);
-      return llmsContent;
-    } catch (aiError) {
-      throw new Error(`Error generating content with AI: ${aiError.message}`);
-    }
+    // Crawl website to extract content
+    await logActivity('info', 'Beginning website crawl');
+    const pages = await crawlWebsite(normalizedUrl);
+    await logActivity('info', 'Website crawl completed', { 
+      pagesCount: pages.length 
+    });
+    
+    // Generate content with AI
+    await logActivity('info', 'Generating LLMS.txt content with AI');
+    const llmsContent = await generateLLMSContent(pages, companyName, companyDescription);
+    await logActivity('info', 'LLMS.txt content generation completed', { 
+      contentLength: llmsContent.length 
+    });
+    
+    return llmsContent;
   } catch (error) {
-    console.error('Error in LLMS.txt generation service:', error);
-    throw error; // Rethrow the error with enhanced message for the controller
+    await logActivity('error', 'Error in LLMS.txt generation', { 
+      error: error.message, stack: error.stack 
+    });
+    
+    // Re-throw with enhanced message for the controller
+    throw error;
   }
-};
+}
 
 /**
- * Generate comprehensive LLMS-full.txt content
+ * Generate LLMS-full.txt file for a company website with more comprehensive content
  * @param {string} companyName - Name of the company
  * @param {string} companyDescription - Description of the company
  * @param {string} websiteUrl - URL of the company website
+ * @param {string} email - Email address for notification
  * @returns {Promise<string>} - Generated LLMS-full.txt content
  */
-exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl) => {
+exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl, email) => {
+  await logActivity('info', 'Starting LLMS-full.txt generation', { 
+    companyName, websiteUrl, email 
+  });
+  
   try {
-    // Perform a deeper crawl of the website
-    const pages = await crawlWebsiteDeep(websiteUrl);
+    // Validate and normalize URL
+    const normalizedUrl = urlUtils.normalizeUrl(websiteUrl);
+    await logActivity('debug', 'Normalized URL for deep crawling', { 
+      original: websiteUrl, normalized: normalizedUrl 
+    });
     
-    // Generate comprehensive LLMS-full.txt content
-    const llmsFullContent = await generateLLMSFullContent(companyName, companyDescription, websiteUrl, pages);
+    // Perform deeper crawl for more comprehensive content
+    await logActivity('info', 'Beginning deep website crawl');
+    const pages = await crawlWebsiteDeep(normalizedUrl);
+    await logActivity('info', 'Deep website crawl completed', { 
+      pagesCount: pages.length 
+    });
+    
+    // Generate enhanced content with AI
+    await logActivity('info', 'Generating comprehensive LLMS-full.txt content with AI');
+    const llmsFullContent = await generateLLMSFullContent(pages, companyName, companyDescription);
+    await logActivity('info', 'LLMS-full.txt content generation completed', { 
+      contentLength: llmsFullContent.length 
+    });
     
     return llmsFullContent;
   } catch (error) {
-    console.error('Error in LLMS-full.txt generation service:', error);
-    throw new Error('Failed to generate LLMS-full.txt content: ' + error.message);
+    await logActivity('error', 'Error in LLMS-full.txt generation', { 
+      error: error.message, stack: error.stack 
+    });
+    
+    // Re-throw with enhanced message for the controller
+    throw error;
   }
-};
+}
 
 /**
  * Crawl website to extract important pages
@@ -85,8 +200,7 @@ async function crawlWebsite(websiteUrl) {
   const page = await context.newPage();
   
   try {
-    console.log(`Crawling website: ${websiteUrl}`);
-    // Increase timeout and wait until network is idle
+    await logActivity('info', 'Beginning website crawl');
     await page.goto(websiteUrl, { 
       waitUntil: 'networkidle',
       timeout: 30000 // 30 seconds timeout for page load
@@ -112,7 +226,9 @@ async function crawlWebsite(websiteUrl) {
     
     // Filter and prioritize important pages
     const importantLinks = prioritizeLinks(links, websiteUrl);
-    console.log(`Found ${importantLinks.length} important links to crawl.`);
+    await logActivity('info', 'Website crawl completed', { 
+      pagesCount: importantLinks.length 
+    });
     
     // Limit to top 10 most important pages to keep processing time reasonable
     const pagesToVisit = importantLinks.slice(0, 10);
@@ -121,8 +237,6 @@ async function crawlWebsite(websiteUrl) {
     const pages = [];
     for (const linkObj of pagesToVisit) {
       try {
-        console.log(`Visiting page: ${linkObj.url}`);
-        
         await page.goto(linkObj.url, { 
           waitUntil: 'networkidle',
           timeout: 15000 // 15 seconds timeout for each subpage
@@ -187,15 +301,29 @@ async function crawlWebsite(websiteUrl) {
  */
 async function crawlWebsiteDeep(websiteUrl) {
   // Similar to crawlWebsite but with more pages and deeper content extraction
-  const browser = await playwright.chromium.launch();
-  const context = await browser.newContext();
+  const browser = await playwright.chromium.launch({
+    headless: true,
+    timeout: 120000 // 2 minutes timeout for the entire operation
+  });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    viewport: { width: 1280, height: 720 }
+  });
   const page = await context.newPage();
   
   try {
-    await page.goto(websiteUrl, { waitUntil: 'networkidle' });
+    await logActivity('info', 'Beginning deep website crawl');
+    await page.goto(websiteUrl, { 
+      waitUntil: 'networkidle',
+      timeout: 45000 // 45 seconds timeout for main page load
+    });
     
-    // Extract all links from the main page
-    const links = await page.evaluate(() => {
+    // Wait for dynamic content to load
+    await page.waitForTimeout(3000);
+    
+    // First extract links from the main page
+    console.log('Extracting links from main page');
+    let links = await page.evaluate(() => {
       const anchors = Array.from(document.querySelectorAll('a'));
       return anchors
         .map(a => ({ 
@@ -206,60 +334,349 @@ async function crawlWebsiteDeep(websiteUrl) {
     });
     
     // Get all unique links
-    const uniqueLinks = [...new Map(links.map(link => [link.url, link])).values()];
+    links = [...new Map(links.map(link => [link.url, link])).values()];
     
-    // Prioritize and take more links for the full version
-    const pagesToVisit = prioritizeLinks(uniqueLinks, websiteUrl).slice(0, 25);
+    // Now visit additional key pages if they aren't in the links yet
+    const baseUrl = new URL(websiteUrl);
+    const keyPaths = [
+      '/about', '/about-us', '/company', 
+      '/products', '/services', '/features',
+      '/pricing', '/plans',
+      '/docs', '/documentation', '/developers',
+      '/api', '/developers/api',
+      '/blog', '/news',
+      '/contact', '/support'
+    ];
     
-    // Visit each page and extract detailed content
-    const pages = [];
-    for (const linkObj of pagesToVisit) {
-      try {
-        await page.goto(linkObj.url, { waitUntil: 'networkidle' });
-        
-        // Extract page title, headings, and main content
-        const pageData = await page.evaluate(() => {
-          // Get page title
-          const title = document.title;
-          
-          // Get headings
-          const headings = Array.from(document.querySelectorAll('h1, h2, h3'))
-            .map(h => h.textContent.trim())
-            .filter(h => h.length > 0);
-          
-          // Get main content with more detail
-          let content = '';
-          const mainElement = document.querySelector('main') || 
-                             document.querySelector('article') || 
-                             document.querySelector('#content') ||
-                             document.querySelector('.content');
-          
-          if (mainElement) {
-            content = mainElement.innerText;
-          } else {
-            // Fallback to body content, excluding scripts, styles, etc.
-            content = document.body.innerText;
-          }
-          
-          return { title, headings, content };
-        });
-        
-        pages.push({
-          title: pageData.title,
-          url: linkObj.url,
-          headings: pageData.headings,
-          content: pageData.content.substring(0, 3000) // More content for full version
-        });
-      } catch (error) {
-        console.error(`Error visiting page ${linkObj.url}:`, error);
-        // Continue with other pages
+    // Add potential key pages to our link list
+    for (const path of keyPaths) {
+      const potentialUrl = new URL(path, baseUrl).toString();
+      if (!links.some(link => link.url === potentialUrl)) {
+        links.push({ url: potentialUrl, text: path.replace('/', '') });
       }
     }
+    
+    // Check site navigation for more potential links
+    try {
+      const navLinks = await page.evaluate(() => {
+        const navItems = Array.from(document.querySelectorAll('nav a, header a, .nav a, .navigation a, .menu a, .sidebar a, footer a'));
+        return navItems
+          .map(a => ({ 
+            url: a.href, 
+            text: a.textContent.trim() 
+          }))
+          .filter(link => link.url && link.url.startsWith(window.location.origin));
+      });
+      
+      // Add new navigation links to our links array
+      for (const navLink of navLinks) {
+        if (!links.some(link => link.url === navLink.url)) {
+          links.push(navLink);
+        }
+      }
+    } catch (navError) {
+      console.error('Error extracting navigation links:', navError);
+    }
+    
+    // ENHANCED: Look for documentation pages specifically
+    const docLinks = links.filter(link => {
+      const url = link.url.toLowerCase();
+      return url.includes('/docs') || 
+             url.includes('/documentation') || 
+             url.includes('/guide') || 
+             url.includes('/developer') ||
+             url.includes('/api');
+    });
+    
+    // We will visit more pages and do a deeper crawl for documentation
+    const allVisitedUrls = new Set();
+    const pages = [];
+    
+    // First prioritize and visit main navigation links
+    const mainPagesToVisit = prioritizeLinks(links, websiteUrl).slice(0, 60); // Increased from 40 to 60
+    
+    for (const linkObj of mainPagesToVisit) {
+      if (allVisitedUrls.has(linkObj.url)) continue;
+      
+      try {
+        await page.goto(linkObj.url, { 
+          waitUntil: 'networkidle',
+          timeout: 20000 // 20 seconds timeout for each subpage
+        });
+        
+        // Mark as visited
+        allVisitedUrls.add(linkObj.url);
+        
+        // Wait for dynamic content
+        await page.waitForTimeout(1000);
+        
+        // Extract page data using the same method as before
+        const pageData = await extractPageDetails(page);
+        
+        if (pageData.content && pageData.content.length > 150) {
+          // Format headings for better usability
+          const formattedHeadings = [];
+          if (pageData.headings.h1 && pageData.headings.h1.length > 0) {
+            formattedHeadings.push(...pageData.headings.h1);
+          }
+          if (pageData.headings.h2 && pageData.headings.h2.length > 0) {
+            formattedHeadings.push(...pageData.headings.h2.slice(0, 10)); // Top 10 h2 headings (increased from 5)
+          }
+          
+          pages.push({
+            title: pageData.title,
+            url: linkObj.url,
+            metaDescription: pageData.metaDescription,
+            headings: formattedHeadings,
+            links: pageData.pageLinks,
+            content: pageData.content.substring(0, 8000) // Increased from 5000 to 8000
+          });
+          
+          // ENHANCED: For documentation pages, also collect their links for recursive crawling
+          if (isDocumentationPage(linkObj.url)) {
+            // Extract links from this documentation page to follow later
+            const subLinks = await page.evaluate(() => {
+              const anchors = Array.from(document.querySelectorAll('a'));
+              return anchors
+                .map(a => ({ 
+                  url: a.href, 
+                  text: a.textContent.trim() 
+                }))
+                .filter(link => link.url && link.url.startsWith(window.location.origin));
+            });
+            
+            // Add unique sublinks to our collection
+            for (const subLink of subLinks) {
+              if (!links.some(link => link.url === subLink.url)) {
+                links.push(subLink);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error visiting page ${linkObj.url}:`, error.message);
+        // Continue with next page
+      }
+    }
+    
+    // ENHANCED: Now specifically target documentation pages with deeper crawling
+    const docPagesToVisit = prioritizeLinks(docLinks, websiteUrl).slice(0, 150); // Added deeper crawl of up to 150 doc pages
+    console.log(`Found ${docPagesToVisit.length} documentation pages to visit for deeper crawl`);
+    
+    for (const docLink of docPagesToVisit) {
+      if (allVisitedUrls.has(docLink.url)) continue;
+      
+      try {
+        await page.goto(docLink.url, { 
+          waitUntil: 'networkidle',
+          timeout: 20000 
+        });
+        
+        // Mark as visited
+        allVisitedUrls.add(docLink.url);
+        
+        // Wait for dynamic content
+        await page.waitForTimeout(1000);
+        
+        // Extract documentation-specific details
+        const pageData = await extractPageDetails(page);
+        
+        if (pageData.content && pageData.content.length > 150) {
+          // For documentation pages, collect more headings and structure
+          const formattedHeadings = [];
+          if (pageData.headings.h1 && pageData.headings.h1.length > 0) {
+            formattedHeadings.push(...pageData.headings.h1);
+          }
+          if (pageData.headings.h2 && pageData.headings.h2.length > 0) {
+            formattedHeadings.push(...pageData.headings.h2);
+          }
+          if (pageData.headings.h3 && pageData.headings.h3.length > 0) {
+            formattedHeadings.push(...pageData.headings.h3.slice(0, 10));
+          }
+          
+          pages.push({
+            title: pageData.title,
+            url: docLink.url,
+            metaDescription: pageData.metaDescription,
+            headings: formattedHeadings,
+            links: pageData.pageLinks,
+            content: pageData.content.substring(0, 8000),
+            isDocumentation: true
+          });
+          
+          // Also collect sub-documentation links
+          const subDocLinks = await page.evaluate(() => {
+            const anchors = Array.from(document.querySelectorAll('.docs-nav a, .documentation-nav a, .sidebar a, aside a, .toc a, nav a'));
+            return anchors
+              .map(a => ({ 
+                url: a.href, 
+                text: a.textContent.trim() 
+              }))
+              .filter(link => link.url && link.url.startsWith(window.location.origin));
+          });
+          
+          // Process important sub-documentation links immediately (depth-first approach)
+          for (const subDocLink of subDocLinks.slice(0, 10)) { // Process top 10 sub-links from each doc page
+            if (allVisitedUrls.has(subDocLink.url)) continue;
+            
+            try {
+              await page.goto(subDocLink.url, { 
+                waitUntil: 'networkidle',
+                timeout: 15000 
+              });
+              
+              // Mark as visited
+              allVisitedUrls.add(subDocLink.url);
+              
+              // Extract page details
+              const subPageData = await extractPageDetails(page);
+              
+              if (subPageData.content && subPageData.content.length > 150) {
+                // Format headings for sub-documentation
+                const subFormattedHeadings = [];
+                if (subPageData.headings.h1 && subPageData.headings.h1.length > 0) {
+                  subFormattedHeadings.push(...subPageData.headings.h1);
+                }
+                if (subPageData.headings.h2 && subPageData.headings.h2.length > 0) {
+                  subFormattedHeadings.push(...subPageData.headings.h2);
+                }
+                
+                pages.push({
+                  title: subPageData.title,
+                  url: subDocLink.url,
+                  metaDescription: subPageData.metaDescription,
+                  headings: subFormattedHeadings,
+                  links: subPageData.pageLinks,
+                  content: subPageData.content.substring(0, 5000),
+                  isDocumentation: true,
+                  parentDoc: docLink.url
+                });
+              }
+            } catch (subError) {
+              console.error(`Error visiting sub-documentation page ${subDocLink.url}:`, subError.message);
+              // Continue with next page
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error visiting documentation page ${docLink.url}:`, error.message);
+        // Continue with next page
+      }
+    }
+    
+    await logActivity('info', 'Deep website crawl completed', { 
+      pagesCount: pages.length,
+      uniqueUrlsVisited: allVisitedUrls.size
+    });
     
     return pages;
   } finally {
     await browser.close();
   }
+}
+
+// HELPER FUNCTIONS FOR ENHANCED CRAWLING
+
+/**
+ * Check if a URL is likely a documentation page
+ * @param {string} url - URL to check
+ * @returns {boolean} - True if likely a documentation page
+ */
+function isDocumentationPage(url) {
+  const lowerUrl = url.toLowerCase();
+  return lowerUrl.includes('/docs') || 
+         lowerUrl.includes('/documentation') || 
+         lowerUrl.includes('/guide') || 
+         lowerUrl.includes('/developer') ||
+         lowerUrl.includes('/api') ||
+         lowerUrl.includes('/reference') ||
+         lowerUrl.includes('/getting-started') ||
+         lowerUrl.includes('/tutorials');
+}
+
+/**
+ * Extract detailed page information using page evaluation
+ * @param {Object} page - Playwright page object
+ * @returns {Promise<Object>} - Page details
+ */
+async function extractPageDetails(page) {
+  return await page.evaluate(() => {
+    // Get page title
+    const title = document.title;
+    
+    // Get meta description
+    let metaDescription = '';
+    const metaDescTag = document.querySelector('meta[name="description"]');
+    if (metaDescTag) {
+      metaDescription = metaDescTag.getAttribute('content');
+    }
+    
+    // Get all headings with their text content
+    const headings = {};
+    ['h1', 'h2', 'h3'].forEach(tagName => {
+      headings[tagName] = Array.from(document.querySelectorAll(tagName))
+        .map(h => h.textContent.trim())
+        .filter(h => h.length > 0);
+    });
+    
+    // Get all link texts in the page
+    const pageLinks = Array.from(document.querySelectorAll('a'))
+      .map(a => ({
+        text: a.textContent.trim(),
+        url: a.href
+      }))
+      .filter(link => 
+        link.text && 
+        link.text.length > 1 && 
+        link.url && 
+        link.url.startsWith(window.location.origin)
+      )
+      .slice(0, 30); // Increased from 20 to 30 links per page
+    
+    // Extract main content with more detail
+    let content = '';
+    const contentSelectors = [
+      'main', 'article', '#content', '.content', '[role="main"]',
+      '.main-content', '#main-content', '.article', '.post', '.page-content',
+      '.docs-content', '.documentation', '.markdown-body', '.docs-body'
+    ];
+    
+    // Try each potential content container
+    let mainElement = null;
+    for (const selector of contentSelectors) {
+      const element = document.querySelector(selector);
+      if (element && element.innerText.length > 150) {
+        mainElement = element;
+        break;
+      }
+    }
+    
+    // If no main content element found, use body
+    if (!mainElement) {
+      mainElement = document.body;
+    }
+    
+    // Clean and extract content
+    // Remove scripts, styles, and hidden elements
+    const elementsToExclude = mainElement.querySelectorAll('script, style, noscript, [style*="display: none"], [style*="display:none"], [hidden]');
+    for (const el of elementsToExclude) {
+      if (el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    }
+    
+    content = mainElement.innerText
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    return { 
+      title, 
+      metaDescription, 
+      headings, 
+      pageLinks,
+      content 
+    };
+  });
 }
 
 /**
@@ -318,133 +735,247 @@ function prioritizeLinks(links, websiteUrl) {
 }
 
 /**
- * Generate LLMS.txt content using Gemini AI
- * @param {string} companyName - Name of the company
- * @param {string} companyDescription - Description of the company
- * @param {string} websiteUrl - URL of the company website
- * @param {Array} pages - Array of page objects with title, url, and content
- * @returns {Promise<string>} - Generated LLMS.txt content
+ * Generate content for LLMS.txt using Google Generative AI
+ * @param {Array} pages - Array of page data with titles and content
+ * @param {String} companyName - Name of the company
+ * @param {String} companyDescription - Description of the company 
+ * @returns {Promise<String>} - Generated LLMS.txt content
  */
-async function generateLLMSContent(companyName, companyDescription, websiteUrl, pages) {
+async function generateLLMSContent(pages, companyName, companyDescription) {
   try {
-    // Prepare data for Gemini AI
-    const pagesSummary = pages.map(page => 
-      `- Title: ${page.title}\n  URL: ${page.url}\n  Summary: ${page.content.substring(0, 200)}...`
-    ).join('\n\n');
-    
-    // Create prompt for Gemini AI
+    // Prepare data for the model
+    const data = {
+      companyName,
+      companyDescription,
+      pages: pages.slice(0, 20).map(page => ({
+        title: page.title,
+        description: page.description ? page.description.substring(0, 300) : '',
+        headings: page.headings ? page.headings.slice(0, 10) : [],
+        url: page.url,
+        content: page.content ? page.content.substring(0, 1000) : ''
+      }))
+    };
+
+    // Create prompt for the model
     const prompt = `
-Generate a valid LLMS.txt file for an AI startup with the following information. Output the raw markdown content ONLY without any surrounding code block syntax or \`\`\`markdown tags:
+I need you to generate a comprehensive LLMS.txt file for ${companyName} that follows the standard format used by companies like Cloudflare. This should be a plain text file (no HTML or markdown) summarizing the key information about the company, its services, policies, and important links.
 
-Company Name: ${companyName}
-Company Description: ${companyDescription}
-Website URL: ${websiteUrl}
+Here's the data from their website:
+${JSON.stringify(data, null, 2)}
 
-Important pages from the website:
-${pagesSummary}
+Generate an LLMS.txt file with the following characteristics:
+1. Start with the company name as a header
+2. Include a short description/mission statement
+3. List key products/services with brief descriptions
+4. Include meaningful section headers to organize the content
+5. Add important links with descriptive text (not just raw URLs)
+6. Include policy information (privacy, terms, security) if available
+7. Make it comprehensive but concise
+8. Structure it in a clear, hierarchical format
+9. DO NOT use any markdown formatting like #, *, >, or \`\`\`
+10. Format should be plain text with clear sections and indentation
+11. Keep the tone professional and informative
 
-The LLMS.txt file should follow this format:
-1. Start with an H1 header with the company name
-2. Include a blockquote with a concise summary of what the company does
-3. Add additional context about the company if relevant
-4. Include sections with H2 headers for different categories of links
-5. Under each section, include markdown links to important pages with brief descriptions
+The format should follow this structure (but with real content):
 
-Make sure the output is valid markdown and follows the LLMS.txt specification. Do not include any hallucinations or fake pages. Only include real pages from the provided list. The output should be ready to use as an LLMS.txt file without any additional formatting, explanation, or markdown code block syntax (\`\`\`).
+${companyName}
+===========
+
+${companyName} provides [brief description of main service/product].
+
+Products & Services:
+-------------------
+- Service 1: Description of service 1
+- Service 2: Description of service 2
+
+Documentation:
+-------------
+- API Reference: https://example.com/api
+- Developer Guide: https://example.com/developers
+
+Legal & Security:
+---------------
+- Privacy Policy: https://example.com/privacy
+- Terms of Service: https://example.com/terms
+
+The content should be 100% plain text with NO markdown formatting.
 `;
 
-    // Generate content with Gemini AI
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    let llmsContent = response.text();
-    
-    // Comprehensive method to clean markdown code blocks
-    llmsContent = cleanMarkdownCodeBlocks(llmsContent);
-    
-    return llmsContent;
+    console.log('Generating LLMS.txt content using AI model...');
+    const result = await genAI.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    // Clean up any markdown formatting that might still be in the text
+    return cleanMarkdownFormatting(text);
   } catch (error) {
-    console.error('Error generating LLMS content with Gemini AI:', error);
-    throw new Error('Failed to generate LLMS.txt content with AI: ' + error.message);
+    console.error('Error generating LLMS content:', error);
+    throw new Error(`Failed to generate LLMS content: ${error.message}`);
   }
 }
 
 /**
- * Generate comprehensive LLMS-full.txt content
- * @param {string} companyName - Name of the company
- * @param {string} companyDescription - Description of the company
- * @param {string} websiteUrl - URL of the company website
- * @param {Array} pages - Array of page objects with title, url, and content
- * @returns {Promise<string>} - Generated LLMS-full.txt content
+ * Generate content for LLMS-full.txt using Google Generative AI
+ * @param {Array} pages - Array of page data with titles and content
+ * @param {String} companyName - Name of the company 
+ * @param {String} companyDescription - Description of the company
+ * @returns {Promise<String>} - Generated LLMS-full.txt content
  */
-async function generateLLMSFullContent(companyName, companyDescription, websiteUrl, pages) {
+async function generateLLMSFullContent(pages, companyName, companyDescription) {
   try {
-    // Prepare more detailed data for Gemini AI
-    const pagesDetailed = pages.map(page => {
-      const headings = page.headings ? `\n  Headings: ${page.headings.join(' | ')}` : '';
-      return `- Title: ${page.title}\n  URL: ${page.url}${headings}\n  Content: ${page.content.substring(0, 500)}...`;
-    }).join('\n\n');
-    
-    // Create more detailed prompt for Gemini AI
+    // Prepare more comprehensive data for the model
+    const data = {
+      companyName,
+      companyDescription,
+      pages: pages.slice(0, 100).map(page => ({
+        title: page.title,
+        description: page.description ? page.description.substring(0, 500) : '',
+        headings: page.headings ? page.headings.slice(0, 30) : [],
+        url: page.url,
+        content: page.content ? page.content.substring(0, 1500) : ''
+      }))
+    };
+
+    // Create detailed prompt for the model
     const prompt = `
-Generate a comprehensive LLMS-full.txt file for an AI startup with the following information. Output the raw markdown content ONLY without any surrounding code block syntax or \`\`\`markdown tags:
+I need you to generate a very detailed and comprehensive LLMS-full.txt file for ${companyName} that follows the format used by major companies like Cloudflare. The file should be a comprehensive plain text document (no HTML or markdown) that includes detailed information about the company, its products, services, documentation, and important links.
 
-Company Name: ${companyName}
-Company Description: ${companyDescription}
-Website URL: ${websiteUrl}
+Here's the data from their website:
+${JSON.stringify(data, null, 2)}
 
-Detailed pages from the website:
-${pagesDetailed}
+Generate an LLMS-full.txt file with the following characteristics:
+1. Start with the company name as a prominent header
+2. Include a detailed company description/mission statement
+3. Provide comprehensive information about each product/service with detailed descriptions
+4. Organize content with clear, hierarchical section headers
+5. Include ALL important links with descriptive text explaining what each link is for
+6. Add detailed policy information (privacy, terms of service, security, compliance)
+7. Include information about API documentation, developer resources, and technical guides if available
+8. Add contact information, support options, and community resources
+9. Format should be plain text with clear sections, indentation, and spacing for readability
+10. DO NOT use any markdown formatting like #, *, >, or \`\`\`
+11. Make the content extremely detailed but well-organized
+12. Keep the tone professional and informative
 
-The LLMS-full.txt file should be more comprehensive than a standard LLMS.txt file and should:
-1. Start with an H1 header with the company name
-2. Include a detailed blockquote with a thorough summary of what the company does
-3. Add extensive context about the company, its products, services, and value proposition
-4. Include sections with H2 headers for different categories of content
-5. Under each section, include markdown links to important pages with detailed descriptions
-6. Include content summaries where appropriate
-7. Organize information in a way that would be most useful for AI systems
+The format should follow this structure (but with real, comprehensive content):
 
-Make sure the output is valid markdown and follows the LLMS.txt specification but with more comprehensive content. Do not include any hallucinations or fake pages. Only include real pages from the provided list. The output should be ready to use as an LLMS-full.txt file without any additional formatting, explanation, or markdown code block syntax (\`\`\`).
+${companyName}
+===========================================================
+
+${companyName} is [detailed company description including mission, background, and core offerings].
+
+PRODUCTS & SERVICES
+-------------------
+
+1. [Product Name]
+   Description: Detailed explanation of the product
+   Features:
+   - Feature 1: Explanation
+   - Feature 2: Explanation
+   Use cases:
+   - Use case 1
+   - Use case 2
+   Documentation: https://example.com/product-docs
+
+2. [Service Name]
+   Description: Detailed explanation of the service
+   ...
+
+DEVELOPER RESOURCES
+------------------
+
+API Documentation:
+- REST API: https://example.com/api
+  The REST API provides programmatic access to [description]
+- GraphQL API: https://example.com/graphql
+  The GraphQL API allows developers to [description]
+
+SDKs & Libraries:
+- JavaScript SDK: https://example.com/js-sdk
+- Python SDK: https://example.com/python-sdk
+...
+
+LEGAL INFORMATION
+----------------
+
+Privacy Policy: https://example.com/privacy
+[Summary of key privacy policy points]
+
+Terms of Service: https://example.com/terms
+[Summary of key terms of service]
+
+Security & Compliance:
+- Security Program: https://example.com/security
+- Compliance Certifications: https://example.com/compliance
+...
+
+SUPPORT & COMMUNITY
+------------------
+
+Help Center: https://example.com/help
+Community Forum: https://example.com/community
+Support Contact: support@example.com
+
+The content should be 100% plain text with NO markdown formatting.
 `;
 
-    // Generate content with Gemini AI
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    let llmsFullContent = response.text();
-    
-    // Comprehensive method to clean markdown code blocks
-    llmsFullContent = cleanMarkdownCodeBlocks(llmsFullContent);
-    
-    return llmsFullContent;
+    console.log('Generating comprehensive LLMS-full.txt content using AI model...');
+    const result = await genAI.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    // Clean up any markdown formatting that might still be in the text
+    return cleanMarkdownFormatting(text);
   } catch (error) {
-    console.error('Error generating LLMS-full content with Gemini AI:', error);
-    throw new Error('Failed to generate LLMS-full.txt content with AI: ' + error.message);
+    console.error('Error generating LLMS-full content:', error);
+    throw new Error(`Failed to generate LLMS-full content: ${error.message}`);
   }
 }
 
 /**
- * Clean markdown code block syntax from text
- * @param {string} text - The text to clean
- * @returns {string} - Cleaned text without markdown code block syntax
+ * Clean markdown formatting from text
+ * @param {string} text - Text to clean
+ * @returns {string} - Cleaned markdown text
  */
-function cleanMarkdownCodeBlocks(text) {
-  // First attempt: Try to match the entire content between markdown code blocks
-  const fullBlockMatch = text.match(/```markdown\s*([\s\S]*?)\s*```/);
-  if (fullBlockMatch && fullBlockMatch[1]) {
-    // If we found a full markdown code block, return just the content
-    return fullBlockMatch[1].trim();
+function cleanMarkdownFormatting(text) {
+  if (!text || typeof text !== 'string') {
+    return '';
   }
   
-  // If we didn't find a full block match, try removing parts individually
-  let cleanedText = text;
+  // Remove code block indicators
+  let cleanedText = text.replace(/```[a-z]*\n|```/g, '');
   
-  // Remove opening ```markdown (case insensitive, with or without newline)
-  cleanedText = cleanedText.replace(/```markdown\s*/gi, '');
+  // Remove markdown headers (# Header)
+  cleanedText = cleanedText.replace(/^#{1,6}\s+/gm, '');
   
-  // Remove any remaining ``` (typically closing tags)
-  cleanedText = cleanedText.replace(/```\s*/g, '');
+  // Remove bold/italic markers (* and _)
+  cleanedText = cleanedText.replace(/(\*\*|__)(.*?)\1/g, '$2'); // Bold
+  cleanedText = cleanedText.replace(/(\*|_)(.*?)\1/g, '$2');    // Italic
   
-  return cleanedText.trim();
+  // Remove inline code (` `)
+  cleanedText = cleanedText.replace(/`([^`]+)`/g, '$1');
+  
+  // Remove blockquotes (> text)
+  cleanedText = cleanedText.replace(/^\s*>\s+/gm, '');
+  
+  // Remove link syntax but keep the URL
+  cleanedText = cleanedText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1: $2');
+  
+  // Remove horizontal rules (---, ___, ***)
+  cleanedText = cleanedText.replace(/^(\*{3,}|-{3,}|_{3,})$/gm, '');
+  
+  // Remove list markers (-, *, +)
+  cleanedText = cleanedText.replace(/^\s*[-*+]\s+/gm, '- ');
+  
+  // Remove numbered list markers (1., 2., etc.)
+  cleanedText = cleanedText.replace(/^\s*\d+\.\s+/gm, '');
+  
+  // Ensure proper spacing after cleaning
+  cleanedText = cleanedText.replace(/\n{3,}/g, '\n\n');
+  
+  // Ensure the text starts with a proper header (usually the company name)
+  // and doesn't have excess space at the beginning
+  cleanedText = cleanedText.trim();
+  
+  return cleanedText;
 } 

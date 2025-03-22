@@ -2,6 +2,7 @@
 :root {
     --primary-color: #314FFB;
     --primary-hover: #3A56D4;
+    --primary-rgb: 49, 79, 251; /* RGB value of #314FFB for rgba() usage */
     --background-color: #000000;
     --secondary-bg: #1a1a1a;
     --text-color: #ffffff;
@@ -246,13 +247,45 @@ h3 {
     opacity: 0.7;
 }
 
+/* Styling for the email notification in the result area */
+.email-notification {
+    color: #555555;
+    text-align: center;
+    margin: auto;
+    width: 100%;
+    padding: 2px; /* Further reduced from 5px */
+    font-size: 0.9rem; /* Reduced from 0.95rem */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.email-notification h3 {
+    margin-top: 0;
+    margin-bottom: 3px; /* Reduced from 5px */
+    color: var(--primary-color);
+    font-size: 1.1rem; /* Reduced from 1.2rem */
+}
+
+.email-notification p {
+    margin: 3px 0; /* Reduced from 5px */
+    opacity: 0.8;
+    line-height: 1.2; /* Reduced from 1.3 */
+}
+
+.email-highlight {
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
 .result-content {
     background-color: var(--secondary-bg);
-    padding: 20px;
+    padding: 15px; /* Reduced from 20px */
     border-radius: 4px;
     white-space: pre-wrap;
     overflow-x: auto;
-    overflow-y: auto; /* Enable vertical scrolling */
+    overflow-y: auto; /* Use auto to allow scrolling only when needed */
     flex-grow: 1; /* Allow content to grow and fill available space */
     height: 475px; /* Set to the larger height by default */
     min-height: 475px; 
@@ -265,7 +298,31 @@ h3 {
     align-items: center;
     justify-content: center;
     position: relative; /* For loader positioning */
-    transition: background-color 0.3s ease; /* Keep transition but remove height transitions */
+    transition: background-color 0.3s ease;
+}
+
+/* Add less padding when displaying the email notification */
+.result-content .email-notification {
+    padding: 0;
+    margin-top: -10px; /* Adjust to help with vertical centering */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+}
+
+/* Style specifically for result content that contains the email notification */
+.result-content.has-content .email-notification {
+    margin-top: -20px; /* Adjusted for better vertical centering */
+}
+
+/* Special case for email notification to ensure it never needs to scroll */
+.result-content.email-notification-container {
+    overflow-y: hidden; /* Never scroll for email notification */
+    justify-content: center; /* Ensure perfect centering */
+    align-items: center;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 /* Add a class for when the email field is visible - No longer needed */

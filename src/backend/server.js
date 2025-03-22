@@ -33,8 +33,20 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.'
 });
 
+// Create a more lenient limiter for the LLMS generation endpoint
+const llmsLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // 10 requests per hour
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many LLMS generation requests, please try again later.'
+});
+
 // Apply rate limiting to all requests
 app.use(limiter);
+
+// Apply the more lenient limiter specifically to the LLMS generation endpoint
+app.use('/api/generate', llmsLimiter);
 
 // Serve static files from the frontend directory
 app.use(express.static(path.join(__dirname, '../../src/frontend')));

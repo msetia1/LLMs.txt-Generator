@@ -71,6 +71,15 @@ exports.generateLLMS = async (req, res, next) => {
         });
       }
       
+      // Validate email format
+      if (!validator.isEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid email',
+          message: 'Please provide a valid email address'
+        });
+      }
+      
       // Validate reCAPTCHA token
       if (!recaptchaToken) {
         return res.status(400).json({
@@ -89,6 +98,17 @@ exports.generateLLMS = async (req, res, next) => {
           message: 'reCAPTCHA verification failed. Please try again.'
         });
       }
+      
+      // Set a longer timeout for full version generation (5 minutes)
+      // This is because the enhanced crawling will take longer
+      req.setTimeout(300000); // 5 minutes
+      
+      console.log(`Starting enhanced deep crawl for ${websiteUrl} to generate LLMS-full.txt`);
+    } else {
+      // Set a reasonable timeout for standard version (2 minutes)
+      req.setTimeout(120000); // 2 minutes
+      
+      console.log(`Starting standard crawl for ${websiteUrl} to generate LLMS.txt`);
     }
     
     // Insert a record into the database for this generation attempt
@@ -141,7 +161,7 @@ exports.generateLLMS = async (req, res, next) => {
       }
       
       // Start the generation process (this will be async and take longer)
-      llmsService.generateLLMSFullTxt(companyName, companyDescription, websiteUrl)
+      llmsService.generateLLMSFullTxt(companyName, companyDescription, websiteUrl, email)
         .then(async (llmsFullContent) => {
           // Update the record with the full content
           await supabase
