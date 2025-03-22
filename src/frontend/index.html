@@ -6,6 +6,7 @@
     <title>LLMS.txt Generator | AI Startup Tool</title>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
     <header>
@@ -190,6 +191,25 @@
     </footer>
 
     <div id="notification" class="notification"></div>
+
+    <!-- reCAPTCHA Modal -->
+    <div id="recaptchaModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Verify you're human</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Please complete the verification below to continue generating your llms-full.txt file.</p>
+                <div class="recaptcha-container">
+                    <div id="recaptchaWidget" class="g-recaptcha" data-sitekey="6LciY_wqAAAAAE8ptVcA1sbDxSUcCogVnsGxooD4"></div>
+                </div>
+                <div class="modal-actions">
+                    <button id="submitRecaptcha" class="btn-primary">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="js/app.js"></script>
 </body>

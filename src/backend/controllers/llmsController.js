@@ -2,6 +2,32 @@ const llmsService = require('../services/llmsService');
 const emailService = require('../services/emailService');
 const validator = require('validator');
 const supabase = require('../utils/supabaseClient');
+const axios = require('axios'); // Make sure to install axios if not already present
+
+/**
+ * Verify reCAPTCHA token with Google's API
+ * @param {string} token - reCAPTCHA token from the client
+ * @returns {Promise<boolean>} - Whether the token is valid
+ */
+async function verifyRecaptcha(token) {
+  try {
+    const response = await axios.post(
+      'https://www.google.com/recaptcha/api/siteverify',
+      null,
+      {
+        params: {
+          secret: process.env.RECAPTCHA_SECRET_KEY,
+          response: token
+        }
+      }
+    );
+    
+    return response.data.success;
+  } catch (error) {
+    console.error('reCAPTCHA verification error:', error);
+    return false;
+  }
+}
 
 /**
  * Generate LLMS.txt or LLMS-full.txt based on request parameters
@@ -14,7 +40,7 @@ exports.generateLLMS = async (req, res, next) => {
   let generationId = null;
   
   try {
-    const { companyName, companyDescription, websiteUrl, email, fullVersion } = req.body;
+    const { companyName, companyDescription, websiteUrl, email, fullVersion, recaptchaToken } = req.body;
     
     // Validate required fields
     if (!companyName || !websiteUrl) {
@@ -32,6 +58,37 @@ exports.generateLLMS = async (req, res, next) => {
         error: 'Invalid URL',
         message: 'Please provide a valid website URL including http:// or https://'
       });
+    }
+    
+    // If fullVersion is true, check for email and reCAPTCHA
+    if (fullVersion === true) {
+      // Validate email for full version
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing email',
+          message: 'Email is required for generating LLMS-full.txt'
+        });
+      }
+      
+      // Validate reCAPTCHA token
+      if (!recaptchaToken) {
+        return res.status(400).json({
+          success: false,
+          error: 'reCAPTCHA verification failed',
+          message: 'Please complete the reCAPTCHA verification.'
+        });
+      }
+      
+      // Verify the reCAPTCHA token
+      const isValidRecaptcha = await verifyRecaptcha(recaptchaToken);
+      if (!isValidRecaptcha) {
+        return res.status(400).json({
+          success: false,
+          error: 'reCAPTCHA verification failed',
+          message: 'reCAPTCHA verification failed. Please try again.'
+        });
+      }
     }
     
     // Insert a record into the database for this generation attempt
