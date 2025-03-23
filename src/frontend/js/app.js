@@ -203,8 +203,30 @@ async function submitFormData(data) {
             body: JSON.stringify(data)
         });
         
-        // Get the response data
-        const result = await response.json();
+        // Check content type to handle different response formats
+        const contentType = response.headers.get('content-type');
+        
+        let result;
+        if (contentType && contentType.includes('application/json')) {
+            // Process JSON response
+            try {
+                result = await response.json();
+            } catch (parseError) {
+                // If JSON parsing fails, get the raw text
+                const errorText = await response.text();
+                throw new Error(`Failed to parse response as JSON: ${errorText}`);
+            }
+        } else {
+            // Handle non-JSON response (text, html, etc.)
+            const textResponse = await response.text();
+            
+            // Try to create a structured error from the text
+            result = {
+                success: false,
+                error: 'Response format error',
+                message: textResponse || 'Server returned a non-JSON response'
+            };
+        }
         
         // Check if the response is an error
         if (!response.ok) {
@@ -229,15 +251,26 @@ async function submitFormData(data) {
             // Scroll to result container
             resultContainer.scrollIntoView({ behavior: 'smooth' });
         } else {
+            // Make sure we have content data
+            if (!result.data || !result.data.content) {
+                // Handle missing content in the response
+                throw new Error('Response missing expected content data', {
+                    cause: { error: 'MissingContentError', message: 'The server response did not include the expected content.' }
+                });
+            }
+            
             // For standard version, display the content
             resultContent.textContent = result.data.content;
             resultContent.classList.add('has-content');
             resultContent.classList.remove('email-notification-container');
+            resultContent.classList.remove('loading');
             
             // Scroll to result container
             resultContainer.scrollIntoView({ behavior: 'smooth' });
         }
     } catch (error) {
+        console.error('Error during LLMS.txt generation:', error);
+        
         // Extract error details from the response
         let errorMessage = error.message;
         let errorType = 'General Error';
@@ -251,16 +284,23 @@ async function submitFormData(data) {
                 errorType = errorData.error;
             }
             
-            if (errorData.suggestion) {
-                suggestion = errorData.suggestion;
+            if (errorData.message) {
+                errorMessage = errorData.message;
+            }
+            
+            // Add specific suggestions based on error type
+            if (errorType === 'InvalidURL') {
+                suggestion = 'Please provide a valid URL including http:// or https://';
+            } else if (errorType === 'TimeoutError') {
+                suggestion = 'The crawling process took too long. Try a smaller website or contact support.';
             }
         }
         
-        // Use the error to create an error message in the result content
-        displayError(errorType, errorMessage, suggestion);
-    } finally {
         // Remove loading state
         resultContent.classList.remove('loading');
+        
+        // Display error in the result container
+        displayError(errorType, errorMessage, suggestion);
     }
 }
 
