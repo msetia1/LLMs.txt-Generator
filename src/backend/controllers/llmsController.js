@@ -99,14 +99,8 @@ exports.generateLLMS = async (req, res, next) => {
         });
       }
       
-      // Set a longer timeout for full version generation (5 minutes)
-      // This is because the enhanced crawling will take longer
-      req.setTimeout(300000); // 5 minutes
-      
       console.log(`Starting enhanced deep crawl for ${websiteUrl} to generate LLMS-full.txt`);
     } else {
-      // Set a reasonable timeout for standard version (2 minutes)
-      req.setTimeout(120000); // 2 minutes
       
       console.log(`Starting standard crawl for ${websiteUrl} to generate LLMS.txt`);
     }

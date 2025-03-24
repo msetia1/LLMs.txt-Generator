@@ -17,46 +17,25 @@ const genAI = new GoogleGenerativeAI(apiKey);
  * @param {Object} [data] - Optional data to include in log
  */
 async function logActivity(level, message, data = null) {
-  const timestamp = new Date().toISOString();
-  const logEntry = {
-    timestamp,
-    level,
-    message,
-    ...(data ? { data } : {})
-  };
-  
-  // Console output for immediate visibility
-  const logColors = {
-    info: '\x1b[32m', // green
-    warn: '\x1b[33m', // yellow
-    error: '\x1b[31m', // red
-    debug: '\x1b[36m'  // cyan
-  };
-  
-  const resetColor = '\x1b[0m';
-  console.log(`${logColors[level] || ''}[${timestamp}][${level.toUpperCase()}] ${message}${resetColor}`);
-  
-  if (data) {
-    console.log(data);
+  // Only log specific types of information
+  if (message.includes('Visiting page:')) {
+    console.log(`[CRAWL] ${message}`);
+  } 
+  else if (data && data.completePrompt) {
+    console.log('\n[GEMINI INPUT]');
+    console.log(data.completePrompt);
+    console.log('------------------------');
   }
-  
-  try {
-    // Create logs directory if it doesn't exist
-    const logsDir = path.join(__dirname, '../../logs');
-    await fs.mkdir(logsDir, { recursive: true });
-    
-    // Write to file based on date
-    const today = new Date().toISOString().split('T')[0];
-    const logFile = path.join(logsDir, `llms-generator-${today}.log`);
-    
-    // Append to log file
-    await fs.appendFile(
-      logFile, 
-      JSON.stringify(logEntry) + '\n',
-      'utf8'
-    );
-  } catch (err) {
-    console.error('Error writing to log file:', err);
+  else if (data && data.completeResponse) {
+    console.log('\n[GEMINI OUTPUT]');
+    console.log(data.completeResponse);
+    console.log('------------------------');
+  }
+  else if (level === 'error') {
+    console.error(`[ERROR] ${message}`);
+    if (data && data.errorMessage) {
+      console.error(data.errorMessage);
+    }
   }
 }
 
@@ -103,6 +82,10 @@ function getGeminiModel(modelType = 'standard') {
  * @returns {Promise<string>} - Generated LLMS.txt content
  */
 exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl, email) => {
+  const startTime = Date.now();
+  let crawlEndTime;
+  let geminiEndTime;
+  
   await logActivity('info', 'Starting LLMS.txt generation', { 
     companyName, websiteUrl, email 
   });
@@ -114,9 +97,10 @@ exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl, em
       original: websiteUrl, normalized: normalizedUrl 
     });
     
-    // Crawl website to extract content with improved batching - deeper than before but not as deep as LLMS-full.txt
+    // Crawl website to extract content with improved batching
     await logActivity('info', 'Beginning website crawl with batch processing');
     const crawlResults = await crawlWebsiteStandard(normalizedUrl, companyName, companyDescription);
+    crawlEndTime = Date.now();
     await logActivity('info', 'Website crawl with batching completed', { 
       pagesCount: crawlResults.pages.length,
       contentBatches: {
@@ -130,9 +114,23 @@ exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl, em
     // Generate content with AI using batched content
     await logActivity('info', 'Generating enhanced LLMS.txt content with AI');
     const llmsContent = await generateLLMSBatchedContent(crawlResults, companyName, companyDescription);
+    geminiEndTime = Date.now();
     await logActivity('info', 'Enhanced LLMS.txt content generation completed', { 
       contentLength: llmsContent.length 
     });
+    
+    // Add statistics after final content
+    console.log('\n[CRAWL STATS]');
+    console.log(`Total pages discovered: ${crawlResults.allQueuedUrls.size}`);
+    console.log(`Total pages visited: ${crawlResults.pages.length}`);
+    console.log('------------------------');
+    
+    // Add timing statistics
+    console.log('\n[TIMING STATS]');
+    console.log(`Crawling time: ${(crawlEndTime - startTime) / 1000} seconds`);
+    console.log(`Gemini processing time: ${(geminiEndTime - crawlEndTime) / 1000} seconds`);
+    console.log(`Total processing time: ${(geminiEndTime - startTime) / 1000} seconds`);
+    console.log('------------------------\n');
     
     return llmsContent;
   } catch (error) {
@@ -154,6 +152,10 @@ exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl, em
  * @returns {Promise<string>} - Generated LLMS-full.txt content
  */
 exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl, email) => {
+  const startTime = Date.now();
+  let crawlEndTime;
+  let geminiEndTime;
+  
   await logActivity('info', 'Starting LLMS-full.txt generation', { 
     companyName, websiteUrl, email 
   });
@@ -168,6 +170,7 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
     // Perform deeper crawl for more comprehensive content
     await logActivity('info', 'Beginning deep website crawl');
     const crawlResults = await crawlWebsiteDeep(normalizedUrl, companyName, companyDescription);
+    crawlEndTime = Date.now();
     await logActivity('info', 'Deep website crawl completed', { 
       pagesCount: crawlResults.pages.length,
       contentBatches: {
@@ -182,9 +185,23 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
     // Generate enhanced content with AI
     await logActivity('info', 'Generating comprehensive LLMS-full.txt content with AI');
     const llmsFullContent = await generateLLMSFullContent(crawlResults, companyName, companyDescription);
+    geminiEndTime = Date.now();
     await logActivity('info', 'LLMS-full.txt content generation completed', { 
       contentLength: llmsFullContent.length 
     });
+    
+    // Add statistics after final content
+    console.log('\n[CRAWL STATS]');
+    console.log(`Total pages discovered: ${crawlResults.allQueuedUrls.size}`);
+    console.log(`Total pages visited: ${crawlResults.pages.length}`);
+    console.log('------------------------');
+    
+    // Add timing statistics
+    console.log('\n[TIMING STATS]');
+    console.log(`Crawling time: ${(crawlEndTime - startTime) / 1000} seconds`);
+    console.log(`Gemini processing time: ${(geminiEndTime - crawlEndTime) / 1000} seconds`);
+    console.log(`Total processing time: ${(geminiEndTime - startTime) / 1000} seconds`);
+    console.log('------------------------\n');
     
     return llmsFullContent;
   } catch (error) {
@@ -777,7 +794,8 @@ Generate ONLY the company values and approach section, starting with "## Company
     
     return {
       pages: allPages,
-      contentBatches
+      contentBatches: contentBatches,
+      allQueuedUrls: allQueuedUrls
     };
   } finally {
     await browser.close();
@@ -816,8 +834,10 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
     policies: []
   };
   
-  const MAX_PAGES_TO_VISIT = 120;
-  const BATCH_SIZE = 20; 
+  const MAX_PAGES_TO_VISIT = 10;
+  const MAX_DEPTH = 2; // Maximum depth from homepage
+  const BATCH_SIZE = 50;
+  
   try {
     await logActivity('info', `Beginning standard website crawl with batching for ${websiteUrl}`);
     
@@ -826,7 +846,7 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
     allQueuedUrls.clear();
     
     // Find the index page
-    const indexPage = await visitPage(websiteUrl, context, domainTracker, allVisitedUrls);
+    const indexPage = await visitPage(websiteUrl, context, domainTracker, allVisitedUrls, 0);
     if (!indexPage) {
       throw new Error(`Failed to load the index page: ${websiteUrl}`);
     }
@@ -838,8 +858,14 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
     const linksToVisit = new Map(); // Use a Map to store links with priority score
     
     // Helper function to add links to our queue with priority
-    function addLinksToQueue(page, basePriority = 1) {
+    async function addLinksToQueue(page, basePriority = 1) {
       if (!page.links || !Array.isArray(page.links)) return;
+      
+      // Skip if we're already at max depth
+      if (page.depth >= MAX_DEPTH) {
+        await logActivity('debug', `Skipping links from ${page.url} - max depth (${MAX_DEPTH}) reached`);
+        return;
+      }
       
       page.links.forEach(link => {
         if (!link || !link.url) return;
@@ -853,6 +879,9 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
           
           // Calculate priority score for this link
           let priorityScore = basePriority;
+          
+          // Decrease priority based on depth
+          priorityScore = priorityScore * (MAX_DEPTH - page.depth);
           
           // Increase priority for certain types of pages
           const url = link.url.toLowerCase();
@@ -918,16 +947,17 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
             priorityScore += 1;
           }
           
-          // Add to queue with priority
+          // Add to queue with priority and depth
           linksToVisit.set(link.url, {
             url: link.url,
             text: link.text,
-            priority: priorityScore
+            priority: priorityScore,
+            depth: page.depth + 1
           });
           
           // Mark as queued
           allQueuedUrls.add(link.url);
-      } catch (error) {
+        } catch {
           // Skip invalid links
         }
       });
@@ -998,7 +1028,7 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
       
       // Visit pages in this batch concurrently
       const batchResults = await Promise.all(
-        batch.map(linkObj => visitPage(linkObj.url, context, domainTracker, allVisitedUrls))
+        batch.map(linkObj => visitPage(linkObj.url, context, domainTracker, allVisitedUrls, linkObj.depth))
       );
       
       // Filter out null results and add to our pages collection
@@ -1053,99 +1083,14 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
     await logActivity('info', `Standard website crawl with batching completed. Visited ${pagesVisited} pages, successfully extracted ${pagesSuccessful} pages`);
     
     // After processing all pages, log summary
-    await logActivity('INFO', `Crawl completed - pages visited: ${visitedPages.length}`, {
-        crawlStats: {
-            totalPagesVisited: visitedPages.length,
-            totalLinksDiscovered: allQueuedUrls.size,
-            domainsCrawled: Array.from(domainTracker.getRelatedDomains())
-        }
-    });
-    
-    // ADDED: Print total pages statistics for better visibility
-    console.log(`====================================`);
-    console.log(`WEBSITE CRAWL STATISTICS:`);
-    console.log(`- Total pages discovered: ${allQueuedUrls.size}`);
-    console.log(`- Total pages visited: ${visitedPages.length}`);
-    console.log(`- Total pages successfully processed: ${pagesSuccessful}`);
-    console.log(`- Domains crawled: ${Array.from(domainTracker.getRelatedDomains()).join(', ')}`);
-    
-    // Count pages per domain
-    const pagesPerDomain = {};
-    visitedPages.forEach(page => {
-      try {
-        const url = new URL(page.url);
-        const domain = url.hostname;
-        pagesPerDomain[domain] = (pagesPerDomain[domain] || 0) + 1;
-      } catch (e) {
-        // Skip invalid URLs
-      }
-    });
-    
-    console.log(`- Pages per domain:`);
-    Object.entries(pagesPerDomain).forEach(([domain, count]) => {
-      console.log(`  * ${domain}: ${count} pages`);
-    });
-    
-    // Count page types
-    const pageTypes = {
-      documentation: 0,
-      product: 0,
-      policy: 0,
-      blog: 0,
-      other: 0
-    };
-    
-    visitedPages.forEach(page => {
-      const url = page.url.toLowerCase();
-      const title = page.title.toLowerCase();
-      
-      if (page.isDocumentation || url.includes('/docs') || url.includes('/documentation') || 
-          title.includes('docs') || title.includes('documentation')) {
-        pageTypes.documentation++;
-      }
-      else if (url.includes('/product') || url.includes('/feature') || 
-               title.includes('product') || title.includes('feature')) {
-        pageTypes.product++;
-      }
-      else if (url.includes('/privacy') || url.includes('/terms') || 
-               url.includes('/policy') || url.includes('/legal') || 
-               title.includes('privacy') || title.includes('terms') || 
-               title.includes('policy')) {
-        pageTypes.policy++;
-      }
-      else if (url.includes('/blog') || url.includes('/news') || 
-               title.includes('blog') || title.includes('news')) {
-        pageTypes.blog++;
-      }
-      else {
-        pageTypes.other++;
-      }
-    });
-    
-    console.log(`- Page types:`);
-    console.log(`  * Documentation pages: ${pageTypes.documentation}`);
-    console.log(`  * Product pages: ${pageTypes.product}`);
-    console.log(`  * Policy pages: ${pageTypes.policy}`);
-    console.log(`  * Blog/News pages: ${pageTypes.blog}`);
-    console.log(`  * Other pages: ${pageTypes.other}`);
-    
-    console.log(`====================================`);
-    
-    // Log a sample of pages (first 3) to avoid huge logs
-    await logActivity('DEBUG', 'Sample of crawled pages:', {
-        pageSamples: visitedPages.slice(0, 3).map(page => ({
-            url: page.url,
-            title: page.title,
-            contentPreview: page.content.substring(0, 150) + '...',
-            linksCount: page.links?.length || 0
-        }))
-    });
+    await logActivity('INFO', `Crawl completed - pages visited: ${visitedPages.length}`);
     
     return {
       pages: visitedPages,
-      contentBatches: contentBatches
+      contentBatches: contentBatches,
+      allQueuedUrls: allQueuedUrls
     };
-  } catch (error) {
+      } catch (error) {
     await logActivity('error', `Error in standard crawl:`, {
       errorMessage: error.message,
       stack: error.stack
@@ -1256,7 +1201,7 @@ async function processPageBatch(batchPages, companyName, companyDescription, con
     }
     
     // Generate sections in parallel with conditional checks to avoid unnecessary API calls
-    const missionPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Mission Statement" section for an LLMS.txt file. This should be 1-2 paragraphs that explain the company's purpose and core objectives.
+    const missionPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Mission Statement" section for an LLMS.txt file. This should be 1-2 sentences that explain the company's purpose and core objectives.
 
 IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
 
@@ -1265,7 +1210,7 @@ ${JSON.stringify(processedData, null, 2)}
 
 Generate ONLY the mission statement section, starting with "## Mission Statement".`;
     
-    const productsPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS.txt file. This should be an overview of the company's main offerings.
+    const productsPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS.txt file. This should be a brief overview of the company's main offerings.
 
 IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
 
@@ -1276,7 +1221,7 @@ Generate ONLY the products/services section, starting with "## Key Products/Serv
     
     const linksPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS.txt file.
 
-This section MUST include AT LEAST 25-30 different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- Link Description: URL" on its own line.
+This section MUST include AT LEAST 25-30 different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- [Link Title](URL): 1 line description about the link" on its own line.
 
 IMPORTANT REQUIREMENTS:
 1. You MUST include AT LEAST 25-30 unique links from the provided data
@@ -1735,295 +1680,6 @@ function prioritizeLinks(links, websiteUrl, domainTracker) {
   
   // Sort by score (highest first)
   return scoredLinks.sort((a, b) => b.score - a.score);
-}
-
-/**
- * Generate content for LLMS.txt using Google Generative AI
- * @param {Array} pages - Array of page data with titles and content
- * @param {String} companyName - Name of the company
- * @param {String} companyDescription - Description of the company
- * @returns {Promise<String>} - Generated LLMS.txt content
- */
-async function generateLLMSContent(pages, companyName, companyDescription) {
-  try {
-    // Get the Gemini model
-    const model = getGeminiModel('standard');
-    
-    // INSERT YOUR LLMS.TXT EXAMPLE HERE
-    const exampleLlmsTxt = `# Anthropic
-
-    ## Docs
-    
-    - [Get API Key](https://docs.anthropic.com/en/api/admin-api/apikeys/get-api-key)
-    - [List API Keys](https://docs.anthropic.com/en/api/admin-api/apikeys/list-api-keys)
-    - [Update API Keys](https://docs.anthropic.com/en/api/admin-api/apikeys/update-api-key)
-    - [Create Invite](https://docs.anthropic.com/en/api/admin-api/invites/create-invite)
-    - [Delete Invite](https://docs.anthropic.com/en/api/admin-api/invites/delete-invite)
-    - [Get Invite](https://docs.anthropic.com/en/api/admin-api/invites/get-invite)
-    - [List Invites](https://docs.anthropic.com/en/api/admin-api/invites/list-invites)
-    - [Get User](https://docs.anthropic.com/en/api/admin-api/users/get-user)
-    - [List Users](https://docs.anthropic.com/en/api/admin-api/users/list-users)
-    - [Remove User](https://docs.anthropic.com/en/api/admin-api/users/remove-user)
-    - [Update User](https://docs.anthropic.com/en/api/admin-api/users/update-user)
-    - [Add Workspace Member](https://docs.anthropic.com/en/api/admin-api/workspace_members/create-workspace-member)
-    - [Delete Workspace Member](https://docs.anthropic.com/en/api/admin-api/workspace_members/delete-workspace-member)
-    - [Get Workspace Member](https://docs.anthropic.com/en/api/admin-api/workspace_members/get-workspace-member)
-    - [List Workspace Members](https://docs.anthropic.com/en/api/admin-api/workspace_members/list-workspace-members)
-    - [Update Workspace Member](https://docs.anthropic.com/en/api/admin-api/workspace_members/update-workspace-member)
-    - [Archive Workspace](https://docs.anthropic.com/en/api/admin-api/workspaces/archive-workspace)
-    - [Create Workspace](https://docs.anthropic.com/en/api/admin-api/workspaces/create-workspace)
-    - [Get Workspace](https://docs.anthropic.com/en/api/admin-api/workspaces/get-workspace)
-    - [List Workspaces](https://docs.anthropic.com/en/api/admin-api/workspaces/list-workspaces)
-    - [Update Workspace](https://docs.anthropic.com/en/api/admin-api/workspaces/update-workspace)
-    - [Cancel a Message Batch](https://docs.anthropic.com/en/api/canceling-message-batches): Batches may be canceled any time before processing ends. Once cancellation is initiated, the batch enters a \`canceling\` state, at which time the system may complete any in-progress, non-interruptible requests before finalizing cancellation.
-    
-    The number of canceled requests is specified in \`request_counts\`. To determine which requests were canceled, check the individual results within the batch. Note that cancellation may not result in any canceled requests if they were non-interruptible.
-    
-    Learn more about the Message Batches API in our [user guide](/en/docs/build-with-claude/batch-processing)
-    - [Amazon Bedrock API](https://docs.anthropic.com/en/api/claude-on-amazon-bedrock): Anthropic's Claude models are now generally available through Amazon Bedrock.
-    - [Vertex AI API](https://docs.anthropic.com/en/api/claude-on-vertex-ai): Anthropic's Claude models are now generally available through [Vertex AI](https://cloud.google.com/vertex-ai).
-    - [Client SDKs](https://docs.anthropic.com/en/api/client-sdks): We provide libraries in Python and TypeScript that make it easier to work with the Anthropic API.
-    - [Create a Text Completion](https://docs.anthropic.com/en/api/complete): [Legacy] Create a Text Completion.
-    
-    The Text Completions API is a legacy API. We recommend using the [Messages API](https://docs.anthropic.com/en/api/messages) going forward.
-    
-    Future models and features will not be compatible with Text Completions. See our [migration guide](https://docs.anthropic.com/en/api/migrating-from-text-completions-to-messages) for guidance in migrating from Text Completions to Messages.
-    - [Create a Message Batch](https://docs.anthropic.com/en/api/creating-message-batches): Send a batch of Message creation requests.
-    
-    The Message Batches API can be used to process multiple Messages API requests at once. Once a Message Batch is created, it begins processing immediately. Batches can take up to 24 hours to complete.
-    
-    Learn more about the Message Batches API in our [user guide](/en/docs/build-with-claude/batch-processing)
-    - [Delete a Message Batch](https://docs.anthropic.com/en/api/deleting-message-batches): Delete a Message Batch.
-    
-    Message Batches can only be deleted once they've finished processing. If you'd like to delete an in-progress batch, you must first cancel it.
-    
-    Learn more about the Message Batches API in our [user guide](/en/docs/build-with-claude/batch-processing)
-    - [Errors](https://docs.anthropic.com/en/api/errors)
-    - [Getting help](https://docs.anthropic.com/en/api/getting-help): We've tried to provide the answers to the most common questions in these docs. However, if you need further technical support using Claude, the Anthropic API, or any of our products, you may reach our support team at [support.anthropic.com](https://support.anthropic.com).
-    - [Getting started](https://docs.anthropic.com/en/api/getting-started)
-    - [IP addresses](https://docs.anthropic.com/en/api/ip-addresses): Anthropic services live at a fixed range of IP addresses. You can add these to your firewall to open the minimum amount of surface area for egress traffic when accessing the Anthropic API and Console. These ranges will not change without notice.
-    - [List Message Batches](https://docs.anthropic.com/en/api/listing-message-batches): List all Message Batches within a Workspace. Most recently created batches are returned first.
-    
-    Learn more about the Message Batches API in our [user guide](/en/docs/build-with-claude/batch-processing)
-    - [Messages](https://docs.anthropic.com/en/api/messages): Send a structured list of input messages with text and/or image content, and the model will generate the next message in the conversation.
-    
-    The Messages API can be used for either single queries or stateless multi-turn conversations.
-    
-    Learn more about the Messages API in our [user guide](/en/docs/initial-setup)
-    - [Message Batches examples](https://docs.anthropic.com/en/api/messages-batch-examples): Example usage for the Message Batches API
-    - [Count Message tokens](https://docs.anthropic.com/en/api/messages-count-tokens): Count the number of tokens in a Message.
-    
-    The Token Count API can be used to count the number of tokens in a Message, including tools, images, and documents, without creating it.
-    
-    Learn more about token counting in our [user guide](/en/docs/build-with-claude/token-counting)
-    - [Messages examples](https://docs.anthropic.com/en/api/messages-examples): Request and response examples for the Messages API
-    - [Streaming Messages](https://docs.anthropic.com/en/api/messages-streaming)
-    - [Migrating from Text Completions](https://docs.anthropic.com/en/api/migrating-from-text-completions-to-messages): Migrating from Text Completions to Messages
-    - [Get a Model](https://docs.anthropic.com/en/api/models): Get a specific model.
-    
-    The Models API response can be used to determine information about a specific model or resolve a model alias to a model ID.
-    - [List Models](https://docs.anthropic.com/en/api/models-list): List available models.
-    
-    The Models API response can be used to determine which models are available for use in the API. More recently released models are listed first.
-    - [OpenAI SDK compatibility (beta)](https://docs.anthropic.com/en/api/openai-sdk): With a few code changes, you can use the OpenAI SDK to test the Anthropic API. Anthropic provides a compatibility layer that lets you quickly evaluate Anthropic model capabilities with minimal effort.
-    - [Prompt validation](https://docs.anthropic.com/en/api/prompt-validation): With Text Completions
-    - [Rate limits](https://docs.anthropic.com/en/api/rate-limits): To mitigate misuse and manage capacity on our API, we have implemented limits on how much an organization can use the Claude API.
-    - [Retrieve Message Batch Results](https://docs.anthropic.com/en/api/retrieving-message-batch-results): Streams the results of a Message Batch as a \`.jsonl\` file.
-    
-    Each line in the file is a JSON object containing the result of a single request in the Message Batch. Results are not guaranteed to be in the same order as requests. Use the \`custom_id\` field to match results to requests.
-    
-    Learn more about the Message Batches API in our [user guide](/en/docs/build-with-claude/batch-processing)
-    - [Retrieve a Message Batch](https://docs.anthropic.com/en/api/retrieving-message-batches): This endpoint is idempotent and can be used to poll for Message Batch completion. To access the results of a Message Batch, make a request to the \`results_url\` field in the response.
-    
-    Learn more about the Message Batches API in our [user guide](/en/docs/build-with-claude/batch-processing)
-    - [Streaming Text Completions](https://docs.anthropic.com/en/api/streaming)
-    - [Supported regions](https://docs.anthropic.com/en/api/supported-regions): Here are the countries, regions, and territories we can currently support access from:
-    - [Versions](https://docs.anthropic.com/en/api/versioning): When making API requests, you must send an \`anthropic-version\` request header. For example, \`anthropic-version: 2023-06-01\`. If you are using our [client libraries](/en/api/client-libraries), this is handled for you automatically.
-    - [All models overview](https://docs.anthropic.com/en/docs/about-claude/models/all-models): Claude is a family of state-of-the-art large language models developed by Anthropic. This guide introduces our models and compares their performance with legacy models. 
-    - [Extended thinking models](https://docs.anthropic.com/en/docs/about-claude/models/extended-thinking-models)
-    - [Security and compliance](https://docs.anthropic.com/en/docs/about-claude/security-compliance)
-    - [Content moderation](https://docs.anthropic.com/en/docs/about-claude/use-case-guides/content-moderation): Content moderation is a critical aspect of maintaining a safe, respectful, and productive environment in digital applications. In this guide, we'll discuss how Claude can be used to moderate content within your digital application.
-    - [Customer support agent](https://docs.anthropic.com/en/docs/about-claude/use-case-guides/customer-support-chat): This guide walks through how to leverage Claude's advanced conversational capabilities to handle customer inquiries in real time, providing 24/7 support, reducing wait times, and managing high support volumes with accurate responses and positive interactions.
-    - [Legal summarization](https://docs.anthropic.com/en/docs/about-claude/use-case-guides/legal-summarization): This guide walks through how to leverage Claude's advanced natural language processing capabilities to efficiently summarize legal documents, extracting key information and expediting legal research. With Claude, you can streamline the review of contracts, litigation prep, and regulatory work, saving time and ensuring accuracy in your legal processes.
-    - [Guides to common use cases](https://docs.anthropic.com/en/docs/about-claude/use-case-guides/overview)
-    - [Ticket routing](https://docs.anthropic.com/en/docs/about-claude/use-case-guides/ticket-routing): This guide walks through how to harness Claude's advanced natural language understanding capabilities to classify customer support tickets at scale based on customer intent, urgency, prioritization, customer profile, and more.
-    - [Admin API](https://docs.anthropic.com/en/docs/administration/administration-api)
-    - [Claude Code overview](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview): Learn about Claude Code, an agentic coding tool made by Anthropic. Currently in beta as a research preview.
-    - [Claude Code troubleshooting](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/troubleshooting): Solutions for common issues with Claude Code installation and usage.
-    - [Claude Code tutorials](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/tutorials): Practical examples and patterns for effectively using Claude Code in your development workflow.
-    - [Google Sheets add-on](https://docs.anthropic.com/en/docs/agents-and-tools/claude-for-sheets): The [Claude for Sheets extension](https://workspace.google.com/marketplace/app/claude%5Ffor%5Fsheets/909417792257) integrates Claude into Google Sheets, allowing you to execute interactions with Claude directly in cells.
-    - [Computer use (beta)](https://docs.anthropic.com/en/docs/agents-and-tools/computer-use)
-    - [Model Context Protocol (MCP)](https://docs.anthropic.com/en/docs/agents-and-tools/mcp)
-    - [Batch processing](https://docs.anthropic.com/en/docs/build-with-claude/batch-processing)
-    - [Citations](https://docs.anthropic.com/en/docs/build-with-claude/citations)
-    - [Context windows](https://docs.anthropic.com/en/docs/build-with-claude/context-windows)
-    - [Define your success criteria](https://docs.anthropic.com/en/docs/build-with-claude/define-success)
-    - [Create strong empirical evaluations](https://docs.anthropic.com/en/docs/build-with-claude/develop-tests)
-    - [Embeddings](https://docs.anthropic.com/en/docs/build-with-claude/embeddings): Text embeddings are numerical representations of text that enable measuring semantic similarity. This guide introduces embeddings, their applications, and how to use embedding models for tasks like search, recommendations, and anomaly detection.
-    - [Building with extended thinking](https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking)
-    - [Multilingual support](https://docs.anthropic.com/en/docs/build-with-claude/multilingual-support): Claude excels at tasks across multiple languages, maintaining strong cross-lingual performance relative to English.
-    - [PDF support](https://docs.anthropic.com/en/docs/build-with-claude/pdf-support): Process PDFs with Claude. Extract text, analyze charts, and understand visual content from your documents.
-    - [Prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)
-    - [Be clear, direct, and detailed](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct)
-    - [Let Claude think (chain of thought prompting) to increase performance](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-of-thought)
-    - [Chain complex prompts for stronger performance](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-prompts)
-    - [Extended thinking tips](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/extended-thinking-tips)
-    - [Long context prompting tips](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/long-context-tips)
-    - [Use examples (multishot prompting) to guide Claude's behavior](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/multishot-prompting)
-    - [Prompt engineering overview](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview)
-    - [Prefill Claude's response for greater output control](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/prefill-claudes-response)
-    - [Automatically generate first draft prompt templates](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/prompt-generator)
-    - [Use our prompt improver to optimize your prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/prompt-improver)
-    - [Use prompt templates and variables](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/prompt-templates-and-variables)
-    - [Giving Claude a role with a system prompt](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts)
-    - [Use XML tags to structure your prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags)
-    - [Token counting](https://docs.anthropic.com/en/docs/build-with-claude/token-counting)
-    - [Tool use with Claude](https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview)
-    - [Text editor tool](https://docs.anthropic.com/en/docs/build-with-claude/tool-use/text-editor-tool)
-    - [Token-efficient tool use (beta)](https://docs.anthropic.com/en/docs/build-with-claude/tool-use/token-efficient-tool-use)
-    - [Vision](https://docs.anthropic.com/en/docs/build-with-claude/vision): The Claude 3 family of models comes with new vision capabilities that allow Claude to understand and analyze images, opening up exciting possibilities for multimodal interaction.
-    - [Initial setup](https://docs.anthropic.com/en/docs/initial-setup): Let's learn how to use the Anthropic API to build with Claude.
-    - [Intro to Claude](https://docs.anthropic.com/en/docs/intro-to-claude): Claude is a family of [highly performant and intelligent AI models](/en/docs/about-claude/models) built by Anthropic. While Claude is powerful and extensible, it's also the most trustworthy and reliable AI available. It follows critical protocols, makes fewer mistakes, and is resistant to jailbreaks—allowing [enterprise customers](https://www.anthropic.com/customers) to build the safest AI-powered applications at scale.
-    - [Anthropic Privacy Policy](https://docs.anthropic.com/en/docs/legal-center/privacy)
-    - [API feature overview](https://docs.anthropic.com/en/docs/resources/api-features): Learn about Anthropic's API features.
-    - [Claude 3.7 system card](https://docs.anthropic.com/en/docs/resources/claude-3-7-system-card)
-    - [Claude 3 model card](https://docs.anthropic.com/en/docs/resources/claude-3-model-card)
-    - [Anthropic Cookbook](https://docs.anthropic.com/en/docs/resources/cookbook)
-    - [Anthropic Courses](https://docs.anthropic.com/en/docs/resources/courses)
-    - [Glossary](https://docs.anthropic.com/en/docs/resources/glossary): These concepts are not unique to Anthropic's language models, but we present a brief summary of key terms below.
-    - [Model deprecations](https://docs.anthropic.com/en/docs/resources/model-deprecations)
-    - [System status](https://docs.anthropic.com/en/docs/resources/status)
-    - [Using the Evaluation Tool](https://docs.anthropic.com/en/docs/test-and-evaluate/eval-tool): The [Anthropic Console](https://console.anthropic.com/dashboard) features an **Evaluation tool** that allows you to test your prompts under various scenarios.
-    - [Increase output consistency (JSON mode)](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/increase-consistency)
-    - [Keep Claude in character with role prompting and prefilling](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/keep-claude-in-character)
-    - [Mitigate jailbreaks and prompt injections](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks)
-    - [Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations)
-    - [Reducing latency](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-latency)
-    - [Reduce prompt leak](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-prompt-leak)
-    - [Welcome to Claude](https://docs.anthropic.com/en/docs/welcome): Claude is a highly performant, trustworthy, and intelligent AI platform built by Anthropic. Claude excels at tasks involving language, reasoning, analysis, coding, and more.
-    - [null](https://docs.anthropic.com/en/home)
-    - [Adaptive editor](https://docs.anthropic.com/en/prompt-library/adaptive-editor): Rewrite text following user-given instructions, such as with a different tone, audience, or style.
-    - [Airport code analyst](https://docs.anthropic.com/en/prompt-library/airport-code-analyst): Find and extract airport codes from text.
-    - [Alien anthropologist](https://docs.anthropic.com/en/prompt-library/alien-anthropologist): Analyze human culture and customs from the perspective of an alien anthropologist.
-    - [Alliteration alchemist](https://docs.anthropic.com/en/prompt-library/alliteration-alchemist): Generate alliterative phrases and sentences for any given subject.
-    - [Babel's broadcasts](https://docs.anthropic.com/en/prompt-library/babels-broadcasts): Create compelling product announcement tweets in the world's 10 most spoken languages.
-    - [Brand builder](https://docs.anthropic.com/en/prompt-library/brand-builder): Craft a design brief for a holistic brand identity.
-    - [Career coach](https://docs.anthropic.com/en/prompt-library/career-coach): Engage in role-play conversations with an AI career coach.
-    - [Cite your sources](https://docs.anthropic.com/en/prompt-library/cite-your-sources): Get answers to questions about a document's content with relevant citations supporting the response.
-    - [Code clarifier](https://docs.anthropic.com/en/prompt-library/code-clarifier): Simplify and explain complex code in plain language.
-    - [Code consultant](https://docs.anthropic.com/en/prompt-library/code-consultant): Suggest improvements to optimize Python code performance.
-    - [Corporate clairvoyant](https://docs.anthropic.com/en/prompt-library/corporate-clairvoyant): Extract insights, identify risks, and distill key information from long corporate reports into a single memo.
-    - [Cosmic Keystrokes](https://docs.anthropic.com/en/prompt-library/cosmic-keystrokes): Generate an interactive speed typing game in a single HTML file, featuring side-scrolling gameplay and Tailwind CSS styling.
-    - [CSV converter](https://docs.anthropic.com/en/prompt-library/csv-converter): Convert data from various formats (JSON, XML, etc.) into properly formatted CSV files.
-    - [Culinary creator](https://docs.anthropic.com/en/prompt-library/culinary-creator): Suggest recipe ideas based on the user's available ingredients and dietary preferences.
-    - [Data organizer](https://docs.anthropic.com/en/prompt-library/data-organizer): Turn unstructured text into bespoke JSON tables.
-    - [Direction decoder](https://docs.anthropic.com/en/prompt-library/direction-decoder): Transform natural language into step-by-step directions.
-    - [Dream interpreter](https://docs.anthropic.com/en/prompt-library/dream-interpreter): Offer interpretations and insights into the symbolism of the user's dreams.
-    - [Efficiency estimator](https://docs.anthropic.com/en/prompt-library/efficiency-estimator): Calculate the time complexity of functions and algorithms.
-    - [Email extractor](https://docs.anthropic.com/en/prompt-library/email-extractor): Extract email addresses from a document into a JSON-formatted list.
-    - [Emoji encoder](https://docs.anthropic.com/en/prompt-library/emoji-encoder): Convert plain text into fun and expressive emoji messages.
-    - [Ethical dilemma navigator](https://docs.anthropic.com/en/prompt-library/ethical-dilemma-navigator): Help the user think through complex ethical dilemmas and provide different perspectives.
-    - [Excel formula expert](https://docs.anthropic.com/en/prompt-library/excel-formula-expert): Create Excel formulas based on user-described calculations or data manipulations.
-    - [Function fabricator](https://docs.anthropic.com/en/prompt-library/function-fabricator): Create Python functions based on detailed specifications.
-    - [Futuristic fashion advisor](https://docs.anthropic.com/en/prompt-library/futuristic-fashion-advisor): Suggest avant-garde fashion trends and styles for the user's specific preferences.
-    - [Git gud](https://docs.anthropic.com/en/prompt-library/git-gud): Generate appropriate Git commands based on user-described version control actions.
-    - [Google apps scripter](https://docs.anthropic.com/en/prompt-library/google-apps-scripter): Generate Google Apps scripts to complete tasks based on user requirements.
-    - [Grading guru](https://docs.anthropic.com/en/prompt-library/grading-guru): Compare and evaluate the quality of written texts based on user-defined criteria and standards.
-    - [Grammar genie](https://docs.anthropic.com/en/prompt-library/grammar-genie): Transform grammatically incorrect sentences into proper English.
-    - [Hal the humorous helper](https://docs.anthropic.com/en/prompt-library/hal-the-humorous-helper): Chat with a knowledgeable AI that has a sarcastic side.
-    - [Idiom illuminator](https://docs.anthropic.com/en/prompt-library/idiom-illuminator): Explain the meaning and origin of common idioms and proverbs.
-    - [Interview question crafter](https://docs.anthropic.com/en/prompt-library/interview-question-crafter): Generate questions for interviews.
-    - [LaTeX legend](https://docs.anthropic.com/en/prompt-library/latex-legend): Write LaTeX documents, generating code for mathematical equations, tables, and more.
-    - [Lesson planner](https://docs.anthropic.com/en/prompt-library/lesson-planner): Craft in depth lesson plans on any subject.
-    - [Library](https://docs.anthropic.com/en/prompt-library/library)
-    - [Master moderator](https://docs.anthropic.com/en/prompt-library/master-moderator): Evaluate user inputs for potential harmful or illegal content.
-    - [Meeting scribe](https://docs.anthropic.com/en/prompt-library/meeting-scribe): Distill meetings into concise summaries including discussion topics, key takeaways, and action items.
-    - [Memo maestro](https://docs.anthropic.com/en/prompt-library/memo-maestro): Compose comprehensive company memos based on key points.
-    - [Mindfulness mentor](https://docs.anthropic.com/en/prompt-library/mindfulness-mentor): Guide the user through mindfulness exercises and techniques for stress reduction.
-    - [Mood colorizer](https://docs.anthropic.com/en/prompt-library/mood-colorizer): Transform text descriptions of moods into corresponding HEX codes.
-    - [Motivational muse](https://docs.anthropic.com/en/prompt-library/motivational-Muse): Provide personalized motivational messages and affirmations based on user input.
-    - [Neologism creator](https://docs.anthropic.com/en/prompt-library/neologism-creator): Invent new words and provide their definitions based on user-provided concepts or ideas.
-    - [Perspectives ponderer](https://docs.anthropic.com/en/prompt-library/perspectives-ponderer): Weigh the pros and cons of a user-provided topic.
-    - [Philosophical musings](https://docs.anthropic.com/en/prompt-library/philosophical-musings): Engage in deep philosophical discussions and thought experiments.
-    - [PII purifier](https://docs.anthropic.com/en/prompt-library/pii-purifier): Automatically detect and remove personally identifiable information (PII) from text documents.
-    - [Polyglot superpowers](https://docs.anthropic.com/en/prompt-library/polyglot-superpowers): Translate text from any language into any language.
-    - [Portmanteau poet](https://docs.anthropic.com/en/prompt-library/portmanteau-poet): Blend two words together to create a new, meaningful portmanteau.
-    - [Product naming pro](https://docs.anthropic.com/en/prompt-library/product-naming-pro): Create catchy product names from descriptions and keywords.
-    - [Prose polisher](https://docs.anthropic.com/en/prompt-library/prose-polisher): Refine and improve written content with advanced copyediting techniques and suggestions.
-    - [Pun-dit](https://docs.anthropic.com/en/prompt-library/pun-dit): Generate clever puns and wordplay based on any given topic.
-    - [Python bug buster](https://docs.anthropic.com/en/prompt-library/python-bug-buster): Detect and fix bugs in Python code.
-    - [Review classifier](https://docs.anthropic.com/en/prompt-library/review-classifier): Categorize feedback into pre-specified tags and categorizations.
-    - [Riddle me this](https://docs.anthropic.com/en/prompt-library/riddle-me-this): Generate riddles and guide the user to the solutions.
-    - [Sci-fi scenario simulator](https://docs.anthropic.com/en/prompt-library/sci-fi-scenario-simulator): Discuss with the user various science fiction scenarios and associated challenges and considerations.
-    - [Second-grade simplifier](https://docs.anthropic.com/en/prompt-library/second-grade-simplifier): Make complex text easy for young learners to understand.
-    - [Simile savant](https://docs.anthropic.com/en/prompt-library/simile-savant): Generate similes from basic descriptions.
-    - [Socratic sage](https://docs.anthropic.com/en/prompt-library/socratic-sage): Engage in Socratic style conversation over a user-given topic.
-    - [Spreadsheet sorcerer](https://docs.anthropic.com/en/prompt-library/spreadsheet-sorcerer): Generate CSV spreadsheets with various types of data.
-    - [SQL sorcerer](https://docs.anthropic.com/en/prompt-library/sql-sorcerer): Transform everyday language into SQL queries.
-    - [Storytelling sidekick](https://docs.anthropic.com/en/prompt-library/storytelling-sidekick): Collaboratively create engaging stories with the user, offering plot twists and character development.
-    - [Time travel consultant](https://docs.anthropic.com/en/prompt-library/time-travel-consultant): Help the user navigate hypothetical time travel scenarios and their implications.
-    - [Tongue twister](https://docs.anthropic.com/en/prompt-library/tongue-twister): Create challenging tongue twisters.
-    - [Trivia generator](https://docs.anthropic.com/en/prompt-library/trivia-generator): Generate trivia questions on a wide range of topics and provide hints when needed.
-    - [Tweet tone detector](https://docs.anthropic.com/en/prompt-library/tweet-tone-detector): Detect the tone and sentiment behind tweets.
-    - [VR fitness innovator](https://docs.anthropic.com/en/prompt-library/vr-fitness-innovator): Brainstorm creative ideas for virtual reality fitness games.
-    - [Website wizard](https://docs.anthropic.com/en/prompt-library/website-wizard): Create one-page websites based on user specifications.
-    - [API](https://docs.anthropic.com/en/release-notes/api): Follow along with updates across Anthropic's API and Developer Console.
-    - [Claude Apps](https://docs.anthropic.com/en/release-notes/claude-apps): Follow along with updates across Anthropic's Claude applications.
-    - [Overview](https://docs.anthropic.com/en/release-notes/overview): Follow along with updates across Anthropic's products and services.
-    - [System Prompts](https://docs.anthropic.com/en/release-notes/system-prompts): See updates to the core system prompts on [Claude.ai](https://www.claude.ai) and the Claude [iOS](http://anthropic.com/ios) and [Android](http://anthropic.com/android) apps.
-    
-    
-    ## Optional
-    
-    - [Developer Console](https://console.anthropic.com/)
-    - [Developer Discord](https://www.anthropic.com/discord)
-    - [Support](https://support.anthropic.com/)`; // You will add your example here
-    
-    // Prepare the data for the model
-    const data = {
-      companyName,
-      companyDescription,
-      pages: pages.slice(0, 30).map(page => ({
-        title: page.title,
-        metaDescription: page.metaDescription || '',
-        headings: page.headings || [],
-        url: page.url,
-        content: page.content ? page.content.substring(0, 1000) : ''
-      }))
-    };
-    
-    // Create detailed prompt
-    const prompt = `You are tasked with creating an LLMS.txt file for ${companyName} based on the following website data. An LLMS.txt file is a concise but comprehensive description of a company's purpose, products, links, and policies.
-
-EXAMPLE OF WELL-FORMATTED LLMS.TXT FILE:
-${exampleLlmsTxt}
-
-WEBSITE DATA:
-${JSON.stringify(data, null, 2)}
-
-Please generate an LLMS.txt file for ${companyName} following this format:
-1. Start with "# ${companyName}" as the main heading
-2. Use "##" for section headers (Mission Statement, Key Products/Services, Important Links, Policies)
-3. Format lists with bullet points (-)
-4. Include all important URLs as absolute links
-5. Keep the content factual and professional
-6. Be concise yet thorough - aim for similar length to the example
-7. Focus only on information found in the provided website data
-8. Include a brief concluding paragraph about the company's values or approach
-
-The final output should ONLY contain the LLMS.txt content, with proper markdown formatting, especially the "#" and "##" headers.`;
-
-    console.log('Generating LLMS.txt content using AI model...');
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    // Clean up any markdown formatting that might still be in the text
-    return cleanMarkdownFormatting(text);
-  } catch (error) {
-    console.error("Error in LLMS.txt generation:", error);
-    throw new Error(`Failed to generate LLMS content: ${error.message}`);
-  }
 }
 
 /**
@@ -2569,9 +2225,10 @@ function createDomainTracker(baseUrl) {
  * @param {object} context - Playwright browser context
  * @param {object} domainTracker - Domain tracker instance
  * @param {Set} allVisitedUrls - Set of already visited URLs
+ * @param {number} depth - Current depth from homepage
  * @returns {Promise<Object|null>} - Page data or null if failed/already visited
  */
-async function visitPage(url, context, domainTracker, allVisitedUrls) {
+async function visitPage(url, context, domainTracker, allVisitedUrls, depth = 0) {
   // Skip if already visited
   if (allVisitedUrls.has(url)) {
     return null;
@@ -2584,13 +2241,16 @@ async function visitPage(url, context, domainTracker, allVisitedUrls) {
     // Create a new page
     const page = await context.newPage();
     
-    await logActivity('debug', `Visiting page: ${url}`);
+    await logActivity('debug', `Visiting page: ${url} (depth: ${depth})`);
     
     // Navigate to URL with appropriate timeouts and wait strategy
     const response = await page.goto(url, {
       waitUntil: 'networkidle',
       timeout: 30000
     });
+    
+    await page.waitForTimeout(2000); // Wait for JS to render
+    await page.waitForSelector('a'); // Wait for links to appear
     
     if (!response) {
       await logActivity('error', `Failed to load page: ${url}`);
@@ -2605,7 +2265,6 @@ async function visitPage(url, context, domainTracker, allVisitedUrls) {
       
       // Skip if we've already visited the redirected URL
       if (allVisitedUrls.has(finalUrl)) {
-        await logActivity('debug', `Skipping already visited redirect: ${finalUrl}`);
         await page.close();
         return null;
       }
@@ -2640,96 +2299,53 @@ async function visitPage(url, context, domainTracker, allVisitedUrls) {
       
       // IMPROVED: Enhanced link extraction
       const links = await page.evaluate(() => {
-        // Helper function to get meaningful text from an anchor
-        function getAnchorText(anchor) {
-          // First try the visible text
-          let text = anchor.textContent?.trim() || '';
+        // Get all links, including those in shadow DOM and dynamic content
+        function getAllLinks(root) {
+          const links = [];
           
-          // If text is very short or empty, try alternative attributes
-          if (text.length < 2) {
-            text = anchor.getAttribute('title') || 
-                   anchor.getAttribute('aria-label') || 
-                   anchor.getAttribute('alt') || 
-                   text;
-          }
-          
-          // If still no good text, check parent elements for better context
-          if (!text || text.length < 2) {
-            const parentText = anchor.closest('li, div, p, h1, h2, h3, h4, h5, h6')?.textContent.trim();
-            if (parentText && parentText.length < 100) {
-              text = parentText;
+          // Get regular links
+          const anchors = root.querySelectorAll('a[href]');
+          anchors.forEach(a => {
+            const href = a.getAttribute('href');
+            if (href && !href.startsWith('#') && !href.startsWith('javascript:') && 
+                !href.startsWith('mailto:') && !href.startsWith('tel:')) {
+              try {
+                const url = new URL(href, window.location.href);
+                links.push({
+                  url: url.href,
+                  text: a.textContent.trim() || a.getAttribute('title') || a.getAttribute('aria-label') || ''
+                });
+              } catch (e) {
+                // Skip invalid URLs
+              }
             }
-          }
+          });
           
-          return text;
+          // Check shadow roots
+          const elements = root.querySelectorAll('*');
+          elements.forEach(el => {
+            if (el.shadowRoot) {
+              links.push(...getAllLinks(el.shadowRoot));
+            }
+          });
+          
+          return links;
         }
         
-        // Get all links on the page
-        const allAnchors = Array.from(document.querySelectorAll('a[href]'));
-        
-        // Process each anchor to extract meaningful data
-        return allAnchors
-          .map(anchor => {
-            // Get href attribute
-            const href = anchor.getAttribute('href');
-            if (!href) return null;
-            
-            // Skip empty, javascript: or mailto: links
-            if (href === '' || 
-                href === '#' || 
-                href.startsWith('javascript:') || 
-                href.startsWith('mailto:') ||
-                href.startsWith('tel:')) {
-              return null;
-            }
-            
-            try {
-              // Try to resolve the URL (handles relative URLs)
-              const resolvedUrl = new URL(href, window.location.href).href;
-              
-              // Get meaningful text
-              const text = getAnchorText(anchor);
-              
-              // Handle special cases for common navigation items
-              const textLower = text.toLowerCase();
-              const isNavItem = anchor.closest('nav, header, .navbar, .navigation, .menu') !== null;
-              const isFooterItem = anchor.closest('footer, .footer') !== null;
-              
-              // Add context to the label based on location
-              let label = text;
-              if (label && (isNavItem || isFooterItem)) {
-                // Enhanced labeling for navigation/footer items that often have minimal text
-                if (textLower.includes('doc') || href.includes('/doc')) {
-                  label = text.length < 5 ? 'Documentation' : text;
-                } else if (textLower.includes('api') || href.includes('/api')) {
-                  label = text.length < 4 ? 'API Documentation' : text;
-                } else if (textLower.includes('blog') || href.includes('/blog')) {
-                  label = text.length < 5 ? 'Blog' : text;
-                } else if (textLower.includes('about') || href.includes('/about')) {
-                  label = text.length < 6 ? 'About' : text;
-                } else if (textLower.includes('contact') || href.includes('/contact')) {
-                  label = text.length < 8 ? 'Contact' : text;
-                } else if (textLower.includes('support') || href.includes('/support')) {
-                  label = text.length < 8 ? 'Support' : text;
-                } else if (textLower.includes('pricing') || href.includes('/pricing')) {
-                  label = text.length < 8 ? 'Pricing' : text;
-                }
-              }
-              
-              // Skip if no text could be extracted
-              if (!label || label.trim() === '') return null;
-              
-              return {
-                url: resolvedUrl,
-                text: label.trim().replace(/\s+/g, ' ').substring(0, 100) // Normalize whitespace and limit length
-              };
-            } catch (e) {
-              // Skip invalid URLs
-              return null;
-            }
-          })
-          .filter(Boolean); // Remove any null entries
+        // Get links from both main document and any shadow DOMs
+        return getAllLinks(document);
       });
+      
+      // Filter and clean the links
+      const cleanedLinks = links.filter(link => 
+        link.text && 
+        link.text.trim() !== '' && 
+        link.url && 
+        !link.url.includes('#') && 
+        !link.url.endsWith('.jpg') && 
+        !link.url.endsWith('.png') && 
+        !link.url.endsWith('.gif')
+      );
       
       // Build the page data object
       const pageData = {
@@ -2739,35 +2355,12 @@ async function visitPage(url, context, domainTracker, allVisitedUrls) {
         metaDescription: pageDetails.metaDescription || '',
         headings: pageDetails.headings || [],
         structured: pageDetails.structured || null,
-        links: links || [],
-        isDocumentation: isDocumentation
+        links: cleanedLinks,
+        isDocumentation: isDocumentation,
+        depth: depth // Add depth to the page data
       };
       
       await page.close();
-      
-      // After successful page processing - add logging
-      await logActivity('INFO', `Page visited and processed: ${finalUrl}`, {
-          pageStats: {
-              title: pageData.title,
-              contentLength: pageData.content.length,
-              headingsCount: pageData.headings.length,
-              linksExtracted: pageData.links.length,
-              isDocumentation: pageData.isDocumentation
-          }
-      });
-      
-      // Add this BEFORE returning the pageData
-      await logActivity('INFO', `Complete page content for: ${finalUrl}`, {
-        fullPageDetails: {
-          url: finalUrl,
-          title: pageData.title,
-          fullContent: pageData.content, // Full content string
-          metaDescription: pageData.metaDescription,
-          headings: pageData.headings,
-          structuredContent: pageData.structured,
-          links: pageData.links
-        }
-      });
       
       return pageData;
     } catch (error) {
@@ -3041,7 +2634,7 @@ Generate ONLY the links section, starting with "## Important Links".`;
         let prompt = '';
         switch(sectionName) {
           case 'mission':
-            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Mission Statement" section for an LLMS.txt file. This should be 1-2 paragraphs that explain the company's purpose and core objectives.
+            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Mission Statement" section for an LLMS.txt file. This should be 1-2 sentences that explain the company's purpose and core objectives.
 
 IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
 
@@ -3108,7 +2701,7 @@ ${sectionName === 'links' ?
 2. DO NOT modify URLs - use them EXACTLY as they appear in the versions below
 3. NEVER replace specific URLs with generic domain URLs (like changing https://docs.example.com/specific-page to https://example.com/)
 4. DO NOT repeat the same URL for different entries
-5. Each link should be in the format "- Link Description: URL" on its own line
+5. Each link should be in the format "- [Link Title](URL): 1 line description of the link" on its own line
 6. Organize links into logical categories` : 
 'IMPORTANT: DO NOT include explanatory notes or comments about how you improved or consolidated the content.'}
 

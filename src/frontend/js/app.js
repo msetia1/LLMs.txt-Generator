@@ -193,6 +193,10 @@ const handleFormSubmit = async (e) => {
  * @param {Object} data - Form data to submit
  */
 async function submitFormData(data) {
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+
     try {
         // Call API to generate LLMS.txt
         const response = await fetch(API_URL, {
@@ -200,32 +204,36 @@ async function submitFormData(data) {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(data)
+            body: JSON.stringify(data),
+            signal: controller.signal
         });
+        
+        // Clear timeout since request completed
+        clearTimeout(timeoutId);
         
         // Check content type to handle different response formats
         const contentType = response.headers.get('content-type');
         
         let result;
-        if (contentType && contentType.includes('application/json')) {
-            // Process JSON response
-            try {
+        try {
+            if (contentType && contentType.includes('application/json')) {
                 result = await response.json();
-            } catch (parseError) {
-                // If JSON parsing fails, get the raw text
-                const errorText = await response.text();
-                throw new Error(`Failed to parse response as JSON: ${errorText}`);
+            } else {
+                const textResponse = await response.text();
+                result = {
+                    success: false,
+                    error: 'Response format error',
+                    message: textResponse || 'Server returned a non-JSON response'
+                };
             }
-        } else {
-            // Handle non-JSON response (text, html, etc.)
-            const textResponse = await response.text();
-            
-            // Try to create a structured error from the text
-            result = {
-                success: false,
-                error: 'Response format error',
-                message: textResponse || 'Server returned a non-JSON response'
-            };
+        } catch (parseError) {
+            throw new Error('Failed to parse server response', { 
+                cause: { 
+                    error: 'ParseError',
+                    message: 'Could not understand the server response',
+                    suggestion: 'Please try again. If the problem persists, contact support.'
+                }
+            });
         }
         
         // Check if the response is an error
@@ -233,11 +241,12 @@ async function submitFormData(data) {
             throw new Error(result.message || 'Failed to generate LLMS.txt', { cause: result });
         }
         
+        // Handle successful response
         if (data.fullVersion) {
             // For full version, show success message in notification
             showNotification(`Your comprehensive LLMS-full.txt file is being generated and will be sent to ${data.email} when ready.`, 'success');
             
-            // Also update the result content area with a friendly message styled like the placeholder
+            // Update result content area
             resultContent.innerHTML = `
                 <div class="email-notification">
                     <h3>Request Received</h3>
@@ -247,60 +256,44 @@ async function submitFormData(data) {
             `;
             resultContent.classList.add('has-content');
             resultContent.classList.add('email-notification-container');
-            
-            // Scroll to result container
-            resultContainer.scrollIntoView({ behavior: 'smooth' });
         } else {
-            // Make sure we have content data
-            if (!result.data || !result.data.content) {
-                // Handle missing content in the response
-                throw new Error('Response missing expected content data', {
-                    cause: { error: 'MissingContentError', message: 'The server response did not include the expected content.' }
-                });
-            }
-            
             // For standard version, display the content
             resultContent.textContent = result.data.content;
             resultContent.classList.add('has-content');
-            resultContent.classList.remove('email-notification-container');
-            resultContent.classList.remove('loading');
-            
-            // Scroll to result container
-            resultContainer.scrollIntoView({ behavior: 'smooth' });
         }
+        
+        // Scroll to result container
+        resultContainer.scrollIntoView({ behavior: 'smooth' });
+        
     } catch (error) {
         console.error('Error during LLMS.txt generation:', error);
         
-        // Extract error details from the response
-        let errorMessage = error.message;
+        // Determine error type and message
         let errorType = 'General Error';
-        let suggestion = 'Please check your inputs and try again.';
+        let errorMessage = error.message || 'An unknown error occurred';
+        let suggestion = 'Please try again. If the problem persists, contact support.';
         
-        // Check if the error has a cause with additional error data
-        if (error.cause) {
-            const errorData = error.cause;
-            
-            if (errorData.error) {
-                errorType = errorData.error;
-            }
-            
-            if (errorData.message) {
-                errorMessage = errorData.message;
-            }
-            
-            // Add specific suggestions based on error type
-            if (errorType === 'InvalidURL') {
-                suggestion = 'Please provide a valid URL including http:// or https://';
-            } else if (errorType === 'TimeoutError') {
-                suggestion = 'The crawling process took too long. Try a smaller website or contact support.';
-            }
+        if (error.name === 'AbortError') {
+            errorType = 'TimeoutError';
+            errorMessage = 'The request took too long to complete';
+            suggestion = 'The server is taking too long to respond. Please try with a smaller website.';
+        } else if (error.message.includes('socket hang up') || error.message.includes('network')) {
+            errorType = 'NetworkError';
+            errorMessage = 'Lost connection to the server';
+            suggestion = 'Please check your internet connection and try again.';
+        } else if (error.cause) {
+            errorType = error.cause.error || errorType;
+            errorMessage = error.cause.message || errorMessage;
+            suggestion = error.cause.suggestion || suggestion;
         }
-        
-        // Remove loading state
-        resultContent.classList.remove('loading');
         
         // Display error in the result container
         displayError(errorType, errorMessage, suggestion);
+        
+    } finally {
+        // Always clean up
+        clearTimeout(timeoutId);
+        resultContent.classList.remove('loading');
     }
 }
 
@@ -404,6 +397,11 @@ inputs.forEach(input => {
  * @param {string} suggestion - Suggestion for fixing the error
  */
 function displayError(errorType, errorMessage, suggestion) {
+    // Clean up any existing states
+    resultContent.classList.remove('loading');
+    resultContent.classList.remove('has-content');
+    resultContent.classList.remove('email-notification-container');
+    
     // Show error in notification
     showNotification(errorMessage, 'error');
     
@@ -411,7 +409,25 @@ function displayError(errorType, errorMessage, suggestion) {
     let errorContent = '';
     let errorClass = '';
     
-    if (errorType === 'Website Crawling Error') {
+    if (errorType === 'NetworkError' || errorType === 'TimeoutError') {
+        errorClass = 'connection-error';
+        errorContent = `
+            <div class="error-message-box ${errorClass}">
+                <h3>⚠️ Connection Error</h3>
+                <p>${errorMessage}</p>
+                <p>${suggestion}</p>
+                <div class="error-tips">
+                    <p><strong>Tips:</strong></p>
+                    <ul>
+                        <li>Check your internet connection</li>
+                        <li>The server might be under heavy load</li>
+                        <li>Try again in a few minutes</li>
+                    </ul>
+                </div>
+                <button class="btn-primary retry-btn">Try Again</button>
+            </div>
+        `;
+    } else if (errorType === 'Website Crawling Error') {
         errorClass = 'crawling-error';
         errorContent = `
             <div class="error-message-box ${errorClass}">
@@ -429,23 +445,13 @@ function displayError(errorType, errorMessage, suggestion) {
                 <button class="btn-primary retry-btn">Try Again</button>
             </div>
         `;
-    } else if (errorType === 'Validation Error' || errorType === 'reCAPTCHA verification failed') {
+    } else if (errorType === 'ValidationError') {
         errorClass = 'validation-error';
         errorContent = `
             <div class="error-message-box ${errorClass}">
                 <h3>⚠️ Validation Error</h3>
                 <p>${errorMessage}</p>
                 <p>Please check your form inputs and try again.</p>
-                <button class="btn-primary retry-btn">Try Again</button>
-            </div>
-        `;
-    } else if (errorType === 'Content Generation Error') {
-        errorClass = 'generation-error';
-        errorContent = `
-            <div class="error-message-box ${errorClass}">
-                <h3>⚠️ Content Generation Error</h3>
-                <p>${errorMessage}</p>
-                <p>${suggestion}</p>
                 <button class="btn-primary retry-btn">Try Again</button>
             </div>
         `;
@@ -461,6 +467,7 @@ function displayError(errorType, errorMessage, suggestion) {
         `;
     }
     
+    // Update the content and add error class
     resultContent.innerHTML = errorContent;
     resultContent.classList.add('error-content');
     
@@ -468,8 +475,15 @@ function displayError(errorType, errorMessage, suggestion) {
     const retryBtn = resultContent.querySelector('.retry-btn');
     if (retryBtn) {
         retryBtn.addEventListener('click', () => {
-            // Clear the error state
+            // Clear all states
             resultContent.classList.remove('error-content');
+            resultContent.classList.remove('loading');
+            resultContent.classList.remove('has-content');
+            resultContent.classList.remove('email-notification-container');
+            
+            // Reset content to placeholder
+            resultContent.innerHTML = '<span class="result-placeholder">Your llms.txt will appear here</span>';
+            
             // Focus on the form
             llmsForm.scrollIntoView({ behavior: 'smooth' });
         });
