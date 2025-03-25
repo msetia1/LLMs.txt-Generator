@@ -34,11 +34,26 @@ function formatLogMessage(level, message, data = null) {
   if (data) {
     try {
       // Special handling for Gemini inputs/outputs
-      if (data.completePrompt) {
-        logMessage += '\n[GEMINI INPUT]\n' + data.completePrompt + '\n------------------------';
-      }
-      else if (data.completeResponse) {
+      if (data.completeResponse) {
         logMessage += '\n[GEMINI OUTPUT]\n' + data.completeResponse + '\n------------------------';
+      }
+      // Special handling for batch pages - only show URLs
+      else if (data.fullBatchPages) {
+        logMessage += '\nProcessing pages:';
+        data.fullBatchPages.forEach(url => {
+          logMessage += '\n- ' + url;
+        });
+      }
+      // For website data, only show essential info
+      else if (data.pages) {
+        logMessage += '\nCrawled pages:';
+        data.pages.forEach(page => {
+          if (typeof page === 'string') {
+            logMessage += '\n- ' + page;
+          } else if (page.url) {
+            logMessage += '\n- ' + page.url;
+          }
+        });
       }
       else {
         const dataStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
@@ -73,11 +88,6 @@ async function logActivity(level, message, data = null) {
   if (message.includes('Visiting page:')) {
     console.log(`[CRAWL] ${message}`);
   } 
-  else if (data && data.completePrompt) {
-    console.log('\n[GEMINI INPUT]');
-    console.log(data.completePrompt);
-    console.log('------------------------');
-  }
   else if (data && data.completeResponse) {
     console.log('\n[GEMINI OUTPUT]');
     console.log(data.completeResponse);
@@ -188,7 +198,7 @@ exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl, em
     
     // Generate content with AI using batched content
     await logActivity('info', 'Generating enhanced LLMS.txt content with AI');
-    const llmsContent = await generateLLMSBatchedContent(crawlResults, companyName, companyDescription);
+    const llmsContent = await generateLLMSBatchedContent(crawlResults, companyName, companyDescription, crawlResults.batchSize);
     geminiEndTime = Date.now();
     await logActivity('info', 'Enhanced LLMS.txt content generation completed', { 
       contentLength: llmsContent.length 
@@ -245,9 +255,9 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
     // Perform deeper crawl with the unified crawlWebsite function
     await logActivity('info', 'Beginning enhanced website crawl for LLMS-full.txt');
     const crawlResults = await crawlWebsite(normalizedUrl, companyName, companyDescription, {
-      maxPages: 300,  // Increased from 30 for more comprehensive coverage
+      maxPages: 300, 
       batchSize: 50,
-      maxDepth: 3    // Increased from 2 to get deeper content
+      maxDepth: 3
     });
     crawlEndTime = Date.now();
     await logActivity('info', 'Enhanced website crawl completed', { 
@@ -262,7 +272,7 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
     
     // Generate content with AI using batched content - using the FULL version
     await logActivity('info', 'Generating comprehensive LLMS-full.txt content with AI');
-    const llmsContent = await generateLLMSFullBatchedContent(crawlResults, companyName, companyDescription);
+    const llmsContent = await generateLLMSFullBatchedContent(crawlResults, companyName, companyDescription, crawlResults.batchSize);
     geminiEndTime = Date.now();
     await logActivity('info', 'LLMS-full.txt content generation completed', { 
       contentLength: llmsContent.length 
@@ -322,11 +332,7 @@ async function processPageBatch(batchPages, companyName, companyDescription, con
     
     // Log the complete data being processed
     await logActivity('INFO', `Complete batch data being processed`, {
-      fullBatchPages: processedData.pages.map(page => ({
-        url: page.url,
-        title: page.title,
-        content: page.content // Full content being sent to Gemini
-      }))
+      fullBatchPages: processedData.pages.map(page => page.url)
     });
     
     // Extract policies and product info
@@ -370,11 +376,7 @@ async function processPageBatch(batchPages, companyName, companyDescription, con
     
     // Helper function to generate a section
     async function generateIncrementalSection(sectionName, sectionPrompt) {
-      // Log the FULL prompt being sent to Gemini, not just a preview
-      await logActivity('INFO', `Full prompt being sent to Gemini for ${sectionName} section`, {
-        completePrompt: sectionPrompt // Log the entire prompt
-      });
-      
+    
       try {
         const sectionResult = await model.generateContent(sectionPrompt);
         // Log the full response from Gemini
@@ -419,7 +421,7 @@ Generate the products/services section, including the "## Key Products/Services"
     
     const linksPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS.txt file.
 
-This section MUST include different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- [Link Title](URL): 1 line description about the link" on its own line.
+This section MUST include different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- [Link Title](URL): Description" on its own line.
 
 CRITICAL REQUIREMENTS FOR URL USAGE:
 1. ONLY use complete URLs that are EXPLICITLY present in the provided website data
@@ -439,7 +441,7 @@ IMPORTANT:
 1. Do NOT include "## Important Links" if there is no content to display
 2. If there is no important links in the provided data, return an empty string WITHOUT any section headers
 3. DO NOT include "## Important Links" if there is no content to display
-4. Only include the section header if you have actual important links to share
+4. Only include the section header if you have actual links to share
 
 WEBSITE DATA:
 ${JSON.stringify(processedData.pages || [], null, 2)}
@@ -1198,9 +1200,10 @@ async function visitPage(url, context, domainTracker, allVisitedUrls, depth = 0)
  * @param {Object} crawlResults - Results from the website crawl, including pages and content batches
  * @param {string} companyName - Name of the company
  * @param {string} companyDescription - Description of the company
+ * @param {number} batchSize - Number of pages to process in each batch
  * @returns {Promise<String>} - Generated LLMS.txt content
  */
-async function generateLLMSBatchedContent(crawlResults, companyName, companyDescription) {
+async function generateLLMSBatchedContent(crawlResults, companyName, companyDescription, batchSize) {
   try {
     // Get pages and pre-generated content batches from the crawler
     const { pages, contentBatches } = crawlResults;
@@ -1219,7 +1222,7 @@ async function generateLLMSBatchedContent(crawlResults, companyName, companyDesc
         const processedData = {
           companyName,
           companyDescription,
-          pages: pages.slice(0, 50).map(page => ({ // Increased from 30 to 50 pages
+          pages: pages.slice(0, batchSize).map(page => ({ // Increased from 30 to 50 pages
             title: page.title,
             metaDescription: page.metaDescription || '',
             headings: page.headings || [],
@@ -1373,7 +1376,7 @@ async function generateLLMSBatchedContent(crawlResults, companyName, companyDesc
           // IMPROVED: Enhanced prompt to emphasize using real URLs
           const prompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS.txt file.
 
-This section MUST include different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- Link Description: URL" on its own line.
+This section MUST include different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- [Link Title](URL): 1 line description about the link" on its own line.
 
 CRITICAL REQUIREMENTS:
 1. You MUST ONLY use the EXACT URLs provided in the data below - DO NOT modify them or create placeholder URLs
@@ -1593,8 +1596,7 @@ async function crawlWebsite(websiteUrl, companyName, companyDescription, options
   const {
     maxPages = 30,
     batchSize = 10,
-    maxDepth = 2,
-    contentBatchPrompts = {}
+    maxDepth = 2
   } = options;
   
   await logActivity('info', `Starting website crawl: ${websiteUrl}`, { maxPages, maxDepth, batchSize });
@@ -1612,6 +1614,7 @@ async function crawlWebsite(websiteUrl, companyName, companyDescription, options
   const allVisitedUrls = new Set();
   const allQueuedUrls = new Set();
   const visitedPages = [];
+  const qualityLinks = new Set(); // Track unique, quality links
   
   // Initialize the result structure with empty arrays for batches
   const contentBatches = {
@@ -1620,6 +1623,31 @@ async function crawlWebsite(websiteUrl, companyName, companyDescription, options
     links: [],
     policies: []
   };
+
+  // Helper function to track quality links
+  function addQualityLink(link) {
+    try {
+      if (!link || !link.url) return false;
+      const url = new URL(link.url);
+      
+      // Skip if it's an anchor link, image, or media file
+      if (url.hash || 
+          url.pathname.match(/\.(jpg|jpeg|png|gif|mp4|mp3|pdf)$/i)) {
+        return false;
+      }
+      
+      // Skip if it's a very short or empty text
+      if (!link.text || link.text.trim().length < 2) {
+        return false;
+      }
+      
+      // Add to quality links set if it passes all filters
+      qualityLinks.add(link.url);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
   
   try {
     await logActivity('info', `Beginning website crawl with batching for ${websiteUrl}`, { maxPages, maxDepth });
@@ -1692,7 +1720,9 @@ async function crawlWebsite(websiteUrl, companyName, companyDescription, options
           
           // Product pages
           else if (url.includes('/product') || 
-                   url.includes('/feature') ||
+                   url.includes('/feature') || 
+                   url.includes('/changelog') ||
+                   text.includes('changelog') ||
                    text.includes('product') || 
                    text.includes('feature')) {
             priorityScore += 3;
@@ -1831,6 +1861,13 @@ async function crawlWebsite(websiteUrl, companyName, companyDescription, options
       
       // Process this batch for content if we have successful pages
       if (successfulPages.length > 0) {
+        // Track quality links from successful pages
+        successfulPages.forEach(page => {
+          if (page.links && Array.isArray(page.links)) {
+            page.links.forEach(link => addQualityLink(link));
+          }
+        });
+        
         await processPageBatch(successfulPages, companyName, companyDescription, contentBatches, batchSize);
       }
       
@@ -1864,15 +1901,26 @@ async function crawlWebsite(websiteUrl, companyName, companyDescription, options
       }
     }
     
-    await logActivity('info', `Website crawl with batching completed. Visited ${pagesVisited} pages, successfully extracted ${pagesSuccessful} pages`);
+    await logActivity('info', 'Website crawl with batching completed', { 
+      pagesCount: visitedPages.length,
+      urls: visitedPages.map(page => page.url),
+      qualityLinksCount: qualityLinks.size,
+      contentBatches: {
+        mission: contentBatches.mission.length,
+        products: contentBatches.products.length,
+        links: contentBatches.links.length,
+        policies: contentBatches.policies.length
+      }
+    });
     
-    // After processing all pages, log summary
-    await logActivity('INFO', `Crawl completed - pages visited: ${visitedPages.length}`);
+    await logActivity('INFO', `Crawl completed - Total pages visited: ${visitedPages.length}, Unique quality links found: ${qualityLinks.size}`);
     
     return {
       pages: visitedPages,
       contentBatches: contentBatches,
-      allQueuedUrls: allQueuedUrls
+      allQueuedUrls: allQueuedUrls,
+      qualityLinksCount: qualityLinks.size,
+      batchSize: batchSize
     };
   } catch (error) {
     await logActivity('error', `Error in crawl:`, {
@@ -1890,9 +1938,10 @@ async function crawlWebsite(websiteUrl, companyName, companyDescription, options
  * @param {Object} crawlResults - Results from the website crawl, including pages and content batches
  * @param {string} companyName - Name of the company
  * @param {string} companyDescription - Description of the company
+ * @param {number} batchSize - Number of pages to process in each batch
  * @returns {Promise<String>} - Generated LLMS-full.txt content
  */
-async function generateLLMSFullBatchedContent(crawlResults, companyName, companyDescription) {
+async function generateLLMSFullBatchedContent(crawlResults, companyName, companyDescription, batchSize) {
   try {
     // Get pages and pre-generated content batches from the crawler
     const { pages, contentBatches } = crawlResults;
@@ -1910,7 +1959,7 @@ async function generateLLMSFullBatchedContent(crawlResults, companyName, company
         const processedData = {
           companyName,
           companyDescription,
-          pages: pages.slice(0, 50).map(page => ({
+          pages: pages.slice(0, batchSize).map(page => ({
             title: page.title,
             metaDescription: page.metaDescription || '',
             headings: page.headings || [],
@@ -2052,7 +2101,7 @@ async function generateLLMSFullBatchedContent(crawlResults, companyName, company
           }));
           
           // Enhanced prompt for LLMS-full.txt links section
-          const prompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS-full.txt file. This should be a comprehensive organization of all important URLs from the company website, including:
+          const prompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS-full.txt file. This should be a comprehensive organization of all URLs from the company website that you have found, including:
 - Documentation and API references
 - Product pages and feature descriptions
 - Support resources and knowledge bases
@@ -2060,22 +2109,22 @@ async function generateLLMSFullBatchedContent(crawlResults, companyName, company
 - Company information and contact details
 - Blog posts and technical articles
 
-Each link should be in the format "- [Link Title](URL): Detailed paragraph description explaining the resource and its value"
+Each link should be in the format "- [Link Title](URL): Detailed 5 sentence paragraph description explaining the resource and its value"
 
 CRITICAL REQUIREMENTS FOR URL USAGE:
 1. ONLY use complete URLs that are EXPLICITLY present in the provided website data
 2. DO NOT create or infer any URLs
-3. Group links into logical categories with clear headings
-4. Prioritize specific, deep links over generic landing pages
+3. Group links into logical categories with clear headings, and include a "General" category for any links that don't fit into the other categories
+4. Do not skip any links, include every unique URL from provided in the data
 5. Include context about the resource type and intended audience
 
 CATEGORIZED LINKS DATA:
 ${JSON.stringify(processedData.categorizedLinks || {}, null, 2)}
 
 ALL AVAILABLE URLS:
-${JSON.stringify(allRealUrls.slice(0, 50), null, 2)}
+${JSON.stringify(allRealUrls.slice(0, batchSize), null, 2)}
 
-Generate ONLY the links section, starting with "## Important Links".`;
+Generate ONLY the Important links section, starting with "## Important Links".`;
 
           try {
             const sectionResult = await model.generateContent(prompt);
@@ -2216,7 +2265,7 @@ ${sectionName === 'links' ?
 2. DO NOT modify URLs - use them EXACTLY as they appear
 3. Group links into clear categories (Documentation, API, Products, etc.)
 4. Provide context about each resource's purpose and audience
-5. Each link should be in the format "- [Link Title](URL): Detailed 1-2 line description"
+5. Each link should be in the format "- [Link Title](URL): Detailed paragraph with at least 5 sentences descriving and explaining the resource and its value"
 6. Prioritize specific, deep links over generic landing pages` : 
 'IMPORTANT: DO NOT include explanatory notes or comments about the consolidation process.'}
 
