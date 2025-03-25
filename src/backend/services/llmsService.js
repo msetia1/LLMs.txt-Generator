@@ -145,7 +145,7 @@ function getGeminiModel(modelType = 'standard') {
 }
 
 /**
- * Generate standard LLMS.txt file for a company website
+ * Generate LLMS.txt file for a company website
  * @param {string} companyName - Name of the company
  * @param {string} companyDescription - Description of the company
  * @param {string} websiteUrl - URL of the company website
@@ -168,9 +168,13 @@ exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl, em
       original: websiteUrl, normalized: normalizedUrl 
     });
     
-    // Crawl website to extract content with improved batching
+    // Crawl website using the unified crawlWebsite function with standard configuration
     await logActivity('info', 'Beginning website crawl with batch processing');
-    const crawlResults = await crawlWebsiteStandard(normalizedUrl, companyName, companyDescription);
+    const crawlResults = await crawlWebsite(normalizedUrl, companyName, companyDescription, {
+      maxPages: 30,
+      batchSize: 10,
+      maxDepth: 2
+    });
     crawlEndTime = Date.now();
     await logActivity('info', 'Website crawl with batching completed', { 
       pagesCount: crawlResults.pages.length,
@@ -238,18 +242,21 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
       original: websiteUrl, normalized: normalizedUrl 
     });
     
-    // Perform deeper crawl for more comprehensive content
-    await logActivity('info', 'Beginning deep website crawl');
-    const crawlResults = await crawlWebsiteDeep(normalizedUrl, companyName, companyDescription);
+    // Perform deeper crawl with the unified crawlWebsite function
+    await logActivity('info', 'Beginning enhanced website crawl for LLMS-full.txt');
+    const crawlResults = await crawlWebsite(normalizedUrl, companyName, companyDescription, {
+      maxPages: 50,
+      batchSize: 10,
+      maxDepth: 2
+    });
     crawlEndTime = Date.now();
-    await logActivity('info', 'Deep website crawl completed', { 
+    await logActivity('info', 'Enhanced website crawl completed', { 
       pagesCount: crawlResults.pages.length,
       contentBatches: {
         mission: crawlResults.contentBatches.mission.length,
         products: crawlResults.contentBatches.products.length,
         links: crawlResults.contentBatches.links.length,
-        policies: crawlResults.contentBatches.policies.length,
-        values: crawlResults.contentBatches.values.length
+        policies: crawlResults.contentBatches.policies.length
       }
     });
     
@@ -285,894 +292,6 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
   }
 }
 
-/**
- * Perform a deeper crawl of the website for LLMS-full.txt
- * @param {string} websiteUrl - URL of the website to crawl
- * @param {string} companyName - Name of the company
- * @param {string} companyDescription - Description of the company
- * @returns {Promise<Object>} - Object containing pages and content batches
- */
-async function crawlWebsiteDeep(websiteUrl, companyName, companyDescription) {
-  // Create domain tracker before launching browser
-  const domainTracker = createDomainTracker(websiteUrl);
-  
-  const browser = await playwright.chromium.launch({
-    headless: true,
-    timeout: 180000 // 3 minutes timeout for the entire operation
-  });
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    viewport: { width: 1280, height: 720 },
-    javaScriptEnabled: true,  // Explicitly enable JavaScript
-  });
-  const page = await context.newPage();
-  
-  // For incremental processing
-  let allPages = [];
-  let contentBatches = {
-    mission: [],
-    products: [],
-    links: [],
-    policies: [],
-    values: []
-  };
-  let batchSize = 10;
-  
-  try {
-    await logActivity('info', `Beginning deep website crawl for ${websiteUrl}`);
-    
-    // When going to the main page, enable redirect handling
-    const response = await page.goto(websiteUrl, { 
-      waitUntil: 'networkidle',  // Wait until network is idle to ensure JS content loads
-      timeout: 45000 // 45 seconds timeout for main page load
-    });
-    
-    // Handle redirects for the initial page
-    if (response) {
-      const finalUrl = response.url();
-      if (finalUrl !== websiteUrl) {
-        await logActivity('info', `Initial URL ${websiteUrl} redirected to ${finalUrl}`);
-        
-        // Add the redirected domain to our tracker
-        domainTracker.addDomain(finalUrl);
-        
-        // Update our base URL if it was a redirect
-        websiteUrl = finalUrl;
-      }
-    }
-    
-    await logActivity('info', `Successfully loaded main page for deep crawl: ${page.url()}`);
-    
-    // Wait longer for dynamic content to load
-    await page.waitForTimeout(5000);
-    
-    // First extract links from the main page
-    await logActivity('info', 'Extracting links from main page');
-    let links = await page.evaluate(() => {
-      const anchors = Array.from(document.querySelectorAll('a'));
-      return anchors
-        .map(a => {
-          // Get the visible text
-          const visibleText = a.textContent.trim();
-          
-          // If text is very short, try to extract title or aria-label
-          let text = visibleText;
-          if (text.length < 2) {
-            text = a.getAttribute('title') || 
-                   a.getAttribute('aria-label') || 
-                   a.getAttribute('alt') || 
-                   text;
-          }
-          
-          return { 
-            url: a.href, 
-            text: text
-          };
-        })
-        .filter(link => 
-          link.url && 
-          link.text && 
-          link.text.length > 0
-        );
-    });
-    
-    // Filter links based on domain tracker
-    links = links.filter(link => {
-      try {
-        return domainTracker.isRelatedDomain(link.url);
-      } catch {
-        return false;
-      }
-    });
-    
-    // Get all unique links
-    links = [...new Map(links.map(link => [link.url, link])).values()];
-    await logActivity('info', `Found ${links.length} unique links on the main page`);
-    
-    const allVisitedUrls = new Set();
-    const allQueuedUrls = new Set(links.map(link => link.url));
-    
-    // Prioritize links for the main phase
-    const mainPagesToVisit = prioritizeLinks(links, websiteUrl, domainTracker).slice(0, 50);
-    await logActivity('info', `Will visit top ${mainPagesToVisit.length} prioritized main pages`);
-    
-    // Check for a direct docs site first and give it special handling
-    const docsUrls = [];
-    const docsUrl = `https://docs.${domainTracker.rootDomain}`;
-    const developerUrl = `https://developer.${domainTracker.rootDomain}`;
-    const apiUrl = `https://api.${domainTracker.rootDomain}`;
-    
-    // Function to check and add docs URL
-    async function checkAndAddDocsUrl(url, label) {
-      try {
-        const response = await axios.head(url, { timeout: 5000 });
-        if (response.status < 400) {
-          docsUrls.push({ url, text: label });
-          allQueuedUrls.add(url);
-          await logActivity('info', `Added ${label} site ${url} to crawl queue`);
-          return true;
-        }
-      } catch (error) {
-        // Site doesn't exist or isn't accessible
-        return false;
-      }
-      return false;
-    }
-    
-    // Check for documentation sites
-    if (!allQueuedUrls.has(docsUrl)) {
-      await checkAndAddDocsUrl(docsUrl, 'Documentation');
-    }
-    
-    if (!allQueuedUrls.has(developerUrl)) {
-      await checkAndAddDocsUrl(developerUrl, 'Developer Documentation');
-    }
-    
-    if (!allQueuedUrls.has(apiUrl)) {
-      await checkAndAddDocsUrl(apiUrl, 'API Documentation');
-    }
-    
-    // Add docs URLs first in the main pages to visit
-    if (docsUrls.length > 0) {
-      // Remove any existing docs URLs from mainPagesToVisit
-      const nonDocsPages = mainPagesToVisit.filter(link => 
-        !docsUrls.some(docsLink => docsLink.url === link.url)
-      );
-      // Put docs URLs at the beginning
-      mainPagesToVisit.length = 0;
-      mainPagesToVisit.push(...docsUrls, ...nonDocsPages);
-    }
-    
-    let mainPagesVisited = 0;
-    let mainPagesSuccessful = 0;
-    
-    // Process pages in batches to avoid memory issues
-    const concurrentPages = 3; // Process 3 pages at a time
-    
-    // Helper function to process batches of pages for content generation
-    async function processPageBatch(batchPages, companyName, companyDescription) {
-      if (batchPages.length === 0) return;
-      
-      await logActivity('info', `Processing batch of ${batchPages.length} pages for incremental content generation`);
-      
-      try {
-        // Get the Gemini model for content generation
-        const model = getGeminiModel('advanced');
-        
-        // Prepare data structure for the model
-        const processedData = {
-          companyName,
-          companyDescription,
-          pages: batchPages.slice(0, 100).map(page => ({
-            title: page.title,
-            metaDescription: page.metaDescription || '',
-            headings: page.headings || [],
-            url: page.url,
-            content: page.content ? page.content.substring(0, 2000) : ''
-          }))
-        };
-        
-        // Extract policies, documentation, and product info
-        const policies = batchPages
-          .filter(page => {
-            const lowerTitle = page.title.toLowerCase();
-            const lowerUrl = page.url.toLowerCase();
-            return lowerTitle.includes('privacy') || 
-                   lowerTitle.includes('policy') || 
-                   lowerTitle.includes('terms') || 
-                   lowerTitle.includes('legal') ||
-                   lowerUrl.includes('privacy') || 
-                   lowerUrl.includes('policy') || 
-                   lowerUrl.includes('terms') || 
-                   lowerUrl.includes('legal');
-          })
-          .map(page => ({
-            title: page.title,
-            url: page.url
-          }));
-        
-        const documentation = batchPages
-          .filter(page => page.isDocumentation)
-          .map(page => ({
-            title: page.title,
-            url: page.url
-          }));
-        
-        const keyProducts = batchPages
-          .filter(page => {
-            const lowerTitle = page.title.toLowerCase();
-            const lowerUrl = page.url.toLowerCase();
-            return (lowerTitle.includes('product') || 
-                    lowerTitle.includes('feature') || 
-                    lowerUrl.includes('product') || 
-                    lowerUrl.includes('feature')) &&
-                   !page.isDocumentation;
-          })
-          .map(page => ({
-            name: page.title,
-            description: page.metaDescription || '',
-            url: page.url
-          }));
-        
-        // Add extracted data to the processed data
-        processedData.policies = policies;
-        processedData.documentation = documentation;
-        processedData.products = keyProducts;
-        
-        // Helper function to generate a section
-        async function generateIncrementalSection(sectionName, sectionPrompt) {
-          try {
-            const sectionResult = await model.generateContent(sectionPrompt);
-            return sectionResult.response.text();
-      } catch (error) {
-            await logActivity('error', `Error generating ${sectionName} section in batch:`, {
-          errorMessage: error.message
-        });
-            return '';
-          }
-        }
-        
-        // Generate sections in parallel
-        const missionPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Mission Statement" section for an LLMS-full.txt file. This should be 2-3 paragraphs that thoroughly explain the company's purpose, vision, and core objectives.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-WEBSITE DATA:
-${JSON.stringify(processedData, null, 2)}
-
-Generate ONLY the mission statement section, starting with "## Mission Statement".`;
-        
-        const productsPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS-full.txt file. This should be a comprehensive overview of the company's main offerings, with subsections for each major product or service category.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-IMPORTANT: If there is no product or service information in the provided data, return an empty string. DO NOT generate a "no information available" message.
-
-WEBSITE DATA:
-${JSON.stringify(processedData.products || [], null, 2)}
-
-Generate ONLY the products/services section, starting with "## Key Products/Services".`;
-        
-        const linksPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS-full.txt file. This should be a comprehensive organization of all important URLs from the company website, grouped into logical categories.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-WEBSITE DATA:
-${JSON.stringify(processedData.pages || [], null, 2)}
-
-Generate ONLY the links section, starting with "## Important Links".`;
-        
-        const policiesPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Policies" section for an LLMS-full.txt file. List each policy ONLY as a title followed by its URL without any description or explanation. Format each policy as "Policy Title: URL" on its own line.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-WEBSITE DATA:
-${JSON.stringify(processedData.policies || [], null, 2)}
-
-Generate ONLY the policies section, starting with "## Policies".`;
-        
-        const valuesPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Company Values and Approach" section for an LLMS-full.txt file. This should be a concluding section that captures the company's ethos, approach, and core values.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-WEBSITE DATA:
-${JSON.stringify(processedData, null, 2)}
-
-Generate ONLY the company values and approach section, starting with "## Company Values and Approach".`;
-        
-        // Only generate sections if we have enough data
-        const [missionSection, productsSection, linksSection, policiesSection, valuesSection] = await Promise.all([
-          generateIncrementalSection('Mission', missionPrompt),
-          keyProducts.length > 0 ? generateIncrementalSection('Products', productsPrompt) : '',
-          processedData.pages.length > 0 ? generateIncrementalSection('Links', linksPrompt) : '',
-          policies.length > 0 ? generateIncrementalSection('Policies', policiesPrompt) : '',
-          generateIncrementalSection('Values', valuesPrompt)
-        ]);
-        
-        // Add generated sections to our batches
-        if (missionSection) contentBatches.mission.push(missionSection);
-        if (productsSection) contentBatches.products.push(productsSection);
-        if (linksSection) contentBatches.links.push(linksSection);
-        if (policiesSection) contentBatches.policies.push(policiesSection);
-        if (valuesSection) contentBatches.values.push(valuesSection);
-        
-        await logActivity('info', `Successfully generated content for batch of ${batchPages.length} pages`);
-      } catch (error) {
-        await logActivity('error', `Error processing batch for content generation:`, {
-          errorMessage: error.message
-        });
-      }
-    }
-    
-    // Process main pages
-    for (let i = 0; i < mainPagesToVisit.length; i += concurrentPages) {
-      const batch = mainPagesToVisit.slice(i, i + concurrentPages);
-      const results = await Promise.all(
-        batch.map(linkObj => visitPage(linkObj.url, context, domainTracker, allVisitedUrls))
-      );
-      
-      mainPagesVisited += batch.length;
-      
-      for (const pageData of results) {
-        if (pageData) {
-          allPages.push(pageData);
-          mainPagesSuccessful++;
-          
-          // Process links from this page, with special handling for documentation pages
-          if (pageData.isDocumentation) {
-            await logActivity('info', `Found documentation page: ${pageData.url}`);
-            
-            // Extract documentation links from the page immediately
-            if (pageData.pageLinks && pageData.pageLinks.length > 0) {
-              let docLinks = pageData.pageLinks.filter(link => {
-                try {
-                  const url = new URL(link.url);
-                  // Only include links that are part of the same docs site
-                  return domainTracker.isRelatedDomain(link.url) && 
-                         (isDocumentationPage(link.url) || url.hostname.includes('docs'));
-                } catch (e) {
-                  return false;
-                }
-              });
-              
-              // Add new doc links to our links array and queue
-              for (const docLink of docLinks) {
-              if (!allQueuedUrls.has(docLink.url)) {
-                links.push(docLink);
-                allQueuedUrls.add(docLink.url);
-                  await logActivity('debug', `Added documentation link: ${docLink.url}`);
-                }
-              }
-            }
-          }
-        }
-      }
-      
-      // Process this batch for content generation if we have enough pages
-      if (allPages.length >= batchSize && allPages.length % batchSize === 0) {
-        // Only extract from the most recent batch
-        const batchToProcess = allPages.slice(allPages.length - batchSize);
-        await processPageBatch(batchToProcess, companyName, companyDescription);
-      }
-    }
-    
-    await logActivity('info', `Completed main pages crawl. Visited ${mainPagesVisited}, extracted ${mainPagesSuccessful}, total links found: ${allQueuedUrls.size}`);
-    
-    // Process documentation pages more aggressively
-    const docIndexPages = Array.from(allQueuedUrls)
-      .filter(url => isDocumentationPage(url))
-      .map(url => ({ url, text: 'Documentation' }));
-    
-    await logActivity('info', `Found ${docIndexPages.length} documentation pages to process`);
-    
-    // Now process all documentation pages - crawl these more deeply
-    // This ensures we don't miss documentation subpages
-    const docPagesToVisit = links
-      .filter(link => isDocumentationPage(link.url) && !allVisitedUrls.has(link.url))
-      .slice(0, 200); // Increased from 100 to 200 to get more doc pages
-    
-    await logActivity('info', `Will visit ${docPagesToVisit.length} documentation pages for deeper crawl`);
-    
-    let docPagesVisited = 0;
-    let docPagesSuccessful = 0;
-    
-    // Use a set to track docs links we've found during crawling
-    const foundDocLinks = new Set();
-    
-    // Helper function to extract and process documentation links
-    async function processDocLinks(pageInstance, baseUrl) {
-      try {
-        // Properly wait for navigation and content
-        await pageInstance.waitForLoadState('networkidle');
-        
-        // First try to find typical documentation navigation elements
-        const docLinks = await pageInstance.evaluate(() => {
-          // Look for common documentation navigation elements
-      const navSelectors = [
-            // Navigation specific elements
-            'nav a', '.nav a', '.sidebar a', '.toc a', '.table-of-contents a',
-            '.docs-nav a', '.docs-sidebar a', '.docs-navigation a', '.docs-menu a',
-            '.documentation-nav a', 'aside a', '.side-nav a', '.sidebar-menu a',
-            // Documentation specific elements
-            '.docs a', '.documentation a', '.api-docs a', '.ref-docs a',
-            '.guides a', '.tutorials a', '.examples a', '.handbook a',
-            // General content links that might be documentation
-            'main a', 'article a', '.content a', '.doc-content a'
-          ];
-          
-          // Get all navigation links
-      const navLinks = Array.from(document.querySelectorAll(navSelectors.join(', ')));
-          
-          // Get all links on the page as a fallback
-          const allLinks = Array.from(document.querySelectorAll('a'));
-          
-          // Combine, prioritizing nav links, and remove duplicates
-          const combinedLinks = [...new Set([...navLinks, ...allLinks])];
-          
-          return combinedLinks
-            .map(a => ({
-                url: a.href, 
-              text: a.textContent.trim() || a.getAttribute('title') || 'Documentation Link',
-              isNavLink: navLinks.includes(a)
-            }))
-            .filter(link => link.url && link.text && link.text.length > 0);
-        });
-        
-        return docLinks;
-      } catch (error) {
-        await logActivity('error', `Error extracting links from ${baseUrl}:`, {
-          errorMessage: error.message
-        });
-        return [];
-      }
-    }
-    
-    // Process docs pages in smaller batches to be more thorough
-    const docConcurrentPages = 2; // Lower concurrency for more reliable processing
-    
-    for (let i = 0; i < docPagesToVisit.length; i += docConcurrentPages) {
-      const batch = docPagesToVisit.slice(i, i + docConcurrentPages);
-      
-      // First visit the pages to extract content
-      const results = await Promise.all(
-        batch.map(docLink => visitPage(docLink.url, context, domainTracker, allVisitedUrls))
-      );
-      
-      docPagesVisited += batch.length;
-      
-      // Process each successful page to extract more documentation links
-      for (const pageData of results) {
-        if (pageData) {
-          allPages.push(pageData);
-          docPagesSuccessful++;
-          
-          // For each docs page, also visit it to extract more links
-          try {
-            const pageInstance = await context.newPage();
-            await pageInstance.goto(pageData.url, { 
-          waitUntil: 'networkidle',
-              timeout: 30000
-            });
-            
-            // Extract documentation links
-            const extractedLinks = await processDocLinks(pageInstance, pageData.url);
-            await pageInstance.close();
-            
-            // Add any new documentation links
-            let newDocLinks = 0;
-            for (const link of extractedLinks) {
-              if (!allQueuedUrls.has(link.url) && !foundDocLinks.has(link.url) &&
-                  domainTracker.isRelatedDomain(link.url) && 
-                  isDocumentationPage(link.url)) {
-                
-                links.push(link);
-                allQueuedUrls.add(link.url);
-                foundDocLinks.add(link.url);
-                
-                // Also add to the docPagesToVisit if we haven't reached our limit
-                if (docPagesToVisit.length < 200) {
-                  docPagesToVisit.push(link);
-                }
-                
-            newDocLinks++;
-            }
-          }
-            
-            if (newDocLinks > 0) {
-              await logActivity('info', `Found ${newDocLinks} new documentation links from ${pageData.url}`);
-        }
-      } catch (error) {
-            await logActivity('error', `Error processing documentation page ${pageData.url}:`, {
-          errorMessage: error.message
-        });
-          }
-        }
-      }
-      
-      // Process this batch for content generation if we have enough pages
-      if (allPages.length >= batchSize && allPages.length % batchSize === 0) {
-        // Only extract from the most recent batch
-        const batchToProcess = allPages.slice(allPages.length - batchSize);
-        await processPageBatch(batchToProcess, companyName, companyDescription);
-      }
-    }
-    
-    // Process remaining important pages
-    const remainingLinks = Array.from(allQueuedUrls)
-      .filter(url => !allVisitedUrls.has(url))
-      .map(url => ({ url, text: 'Link' }));
-    
-    await logActivity('info', `Have ${remainingLinks.length} unvisited links remaining`);
-    
-    // Give higher priority to remaining documentation pages
-    const additionalPagesToVisit = prioritizeLinks(remainingLinks, websiteUrl, domainTracker)
-      .slice(0, 50); // Limit to 50 more pages
-    
-    await logActivity('info', `Will visit up to ${additionalPagesToVisit.length} additional high-priority pages`);
-    
-    let additionalPagesVisited = 0;
-    let additionalPagesSuccessful = 0;
-    
-    // Process additional pages in batches
-    for (let i = 0; i < additionalPagesToVisit.length; i += concurrentPages) {
-      const batch = additionalPagesToVisit.slice(i, i + concurrentPages);
-      const results = await Promise.all(
-        batch.map(linkObj => visitPage(linkObj.url, context, domainTracker, allVisitedUrls))
-      );
-      
-      additionalPagesVisited += batch.length;
-      
-      for (const pageData of results) {
-        if (pageData) {
-          allPages.push(pageData);
-          additionalPagesSuccessful++;
-        }
-      }
-      
-      // Process this batch for content generation if we have enough new pages
-      if (allPages.length % batchSize === 0) {
-        // Only extract from the most recent batch
-        const batchToProcess = allPages.slice(allPages.length - Math.min(batchSize, batch.length));
-        await processPageBatch(batchToProcess, companyName, companyDescription);
-      }
-    }
-    
-    // Process any remaining pages that haven't been processed yet
-    const remainingBatch = allPages.length % batchSize;
-    if (remainingBatch > 0) {
-      const batchToProcess = allPages.slice(allPages.length - remainingBatch);
-      await processPageBatch(batchToProcess, companyName, companyDescription);
-    }
-    
-    await logActivity('info', `Deep website crawl completed.`, { 
-      totalPagesExtracted: allPages.length,
-      uniqueUrlsVisited: allVisitedUrls.size,
-      totalLinksDiscovered: allQueuedUrls.size,
-      mainPhasePagesVisited: mainPagesVisited,
-      mainPhasePagesSuccessful: mainPagesSuccessful,
-      docPhasePagesVisited: docPagesVisited,
-      docPhasePagesSuccessful: docPagesSuccessful,
-      additionalPhasePagesVisited: additionalPagesVisited,
-      additionalPhasePagesSuccessful: additionalPagesSuccessful,
-      knownDocsDomains: Array.from(domainTracker.knownDocsDomains),
-      foundDocLinks: foundDocLinks.size,
-      contentBatchesGenerated: {
-        mission: contentBatches.mission.length,
-        products: contentBatches.products.length,
-        links: contentBatches.links.length,
-        policies: contentBatches.policies.length,
-        values: contentBatches.values.length
-      }
-    });
-    
-    return {
-      pages: allPages,
-      contentBatches: contentBatches,
-      allQueuedUrls: allQueuedUrls
-    };
-  } finally {
-    await browser.close();
-  }
-}
-
-/**
- * Perform a standard crawl of the website for LLMS.txt with batch processing
- * @param {string} websiteUrl - URL of the website to crawl
- * @param {string} companyName - Name of the company
- * @param {string} companyDescription - Description of the company
- * @returns {Promise<Object>} - Object containing pages and content batches
- */
-async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription) {
-  await logActivity('info', `Starting standard website crawl: ${websiteUrl}`);
-  
-  // Initialize browser and context for crawling
-  const browser = await playwright.chromium.launch({
-    headless: true
-  });
-  const context = await browser.newContext({
-    userAgent: 'LLMSTxtGenerator/1.0'
-  });
-  
-  // Set up data structures for crawling
-  const domainTracker = createDomainTracker(websiteUrl);
-  const allVisitedUrls = new Set();
-  const allQueuedUrls = new Set();
-  const visitedPages = [];
-  
-  // Initialize the result structure with empty arrays for batches
-  const contentBatches = {
-    mission: [],
-    products: [],
-    links: [],
-    policies: []
-  };
-  
-  const MAX_PAGES_TO_VISIT = 30;
-  const MAX_DEPTH = 2; // Maximum depth from homepage
-  const BATCH_SIZE = 50;
-  
-  try {
-    await logActivity('info', `Beginning standard website crawl with batching for ${websiteUrl}`);
-    
-    // Set for tracking all URLs we've visited or queued
-    allVisitedUrls.clear(); 
-    allQueuedUrls.clear();
-    
-    // Find the index page
-    const indexPage = await visitPage(websiteUrl, context, domainTracker, allVisitedUrls, 0);
-    if (!indexPage) {
-      throw new Error(`Failed to load the index page: ${websiteUrl}`);
-    }
-    
-    // Add the initial page to our results
-    visitedPages.push(indexPage);
-    
-    // Extract links from the index page
-    const linksToVisit = new Map(); // Use a Map to store links with priority score
-    
-    // Helper function to add links to our queue with priority
-    async function addLinksToQueue(page, basePriority = 1) {
-      if (!page.links || !Array.isArray(page.links)) return;
-      
-      // Skip if we're already at max depth
-      if (page.depth >= MAX_DEPTH) {
-        await logActivity('debug', `Skipping links from ${page.url} - max depth (${MAX_DEPTH}) reached`);
-        return;
-      }
-      
-      page.links.forEach(link => {
-        if (!link || !link.url) return;
-        
-        try {
-          // Skip if already queued or visited
-          if (allQueuedUrls.has(link.url) || allVisitedUrls.has(link.url)) return;
-          
-          // Check if it's a related domain we should follow
-          if (!domainTracker.isRelatedDomain(link.url)) return;
-          
-          // Calculate priority score for this link
-          let priorityScore = basePriority;
-          
-          // Decrease priority based on depth
-          priorityScore = priorityScore * (MAX_DEPTH - page.depth);
-          
-          // Increase priority for certain types of pages
-          const url = link.url.toLowerCase();
-          const text = (link.text || '').toLowerCase();
-          
-          // Documentation gets highest priority
-          if (url.includes('/docs') || 
-              url.includes('/documentation') || 
-              url.includes('/guide') || 
-              url.includes('/manual') ||
-              url.includes('/help') ||
-              text.includes('docs') || 
-              text.includes('documentation') || 
-              text.includes('guide')) {
-            priorityScore += 5;
-          }
-          
-          // API and developer pages
-          else if (url.includes('/api') || 
-                   url.includes('/developer') ||
-                   text.includes('api') || 
-                   text.includes('developer')) {
-            priorityScore += 4;
-          }
-          
-          // Product pages
-          else if (url.includes('/product') || 
-                   url.includes('/feature') ||
-                   text.includes('product') || 
-                   text.includes('feature')) {
-            priorityScore += 3;
-          }
-          
-          // About, company info
-          else if (url.includes('/about') || 
-                   url.includes('/company') ||
-                   url.includes('/team') ||
-                   text.includes('about') || 
-                   text.includes('company') ||
-                   text.includes('team')) {
-            priorityScore += 2;
-          }
-          
-          // Blog, resources
-          else if (url.includes('/blog') || 
-                   url.includes('/resource') ||
-                   url.includes('/news') ||
-                   text.includes('blog') || 
-                   text.includes('resource') ||
-                   text.includes('news')) {
-            priorityScore += 1;
-          }
-          
-          // Policy pages
-          else if (url.includes('/privacy') || 
-                   url.includes('/terms') ||
-                   url.includes('/policy') ||
-                   url.includes('/legal') ||
-                   text.includes('privacy') || 
-                   text.includes('terms') ||
-                   text.includes('policy') ||
-                   text.includes('legal')) {
-            priorityScore += 1;
-          }
-          
-          // Add to queue with priority and depth
-          linksToVisit.set(link.url, {
-            url: link.url,
-            text: link.text,
-            priority: priorityScore,
-            depth: page.depth + 1
-          });
-          
-          // Mark as queued
-          allQueuedUrls.add(link.url);
-        } catch {
-          // Skip invalid links
-        }
-      });
-    }
-    
-    // Add index page links to queue
-    addLinksToQueue(indexPage, 2); // Higher base priority for homepage links
-    
-    // Check for documentation/API subdomains
-    const subdomains = [
-      { subdomain: 'docs', label: 'Documentation' },
-      { subdomain: 'developer', label: 'Developer Documentation' },
-      { subdomain: 'developers', label: 'Developers Documentation' },
-      { subdomain: 'api', label: 'API Documentation' },
-      { subdomain: 'help', label: 'Help Center' },
-      { subdomain: 'support', label: 'Support Center' },
-      { subdomain: 'community', label: 'Community' },
-      { subdomain: 'blog', label: 'Blog' },
-      {subdomain: 'forum', label: 'Forum'}
-    ];
-    
-    // Check all potential subdomains
-    for (const { subdomain, label } of subdomains) {
-      const subdomainUrl = `https://${subdomain}.${domainTracker.rootDomain}`;
-      try {
-        const response = await axios.head(subdomainUrl, { timeout: 5000 });
-        if (response.status < 400) {
-          // Add to queue with high priority
-          linksToVisit.set(subdomainUrl, {
-            url: subdomainUrl,
-            text: label,
-            priority: 10 // Very high priority
-          });
-          allQueuedUrls.add(subdomainUrl);
-          await logActivity('info', `Added ${label} site ${subdomainUrl} to crawl queue`);
-        }
-      } catch (error) {
-        // Subdomain doesn't exist or isn't accessible
-      }
-    }
-    
-    // Function to get prioritized links that haven't been visited yet
-    function getNextBatchOfLinks() {
-      return Array.from(linksToVisit.values())
-        .filter(link => !allVisitedUrls.has(link.url)) // Only unvisited links
-        .sort((a, b) => b.priority - a.priority); // Descending by priority
-    }
-    
-    // Get initial set of links to visit
-    let allPrioritizedLinks = getNextBatchOfLinks().slice(0, MAX_PAGES_TO_VISIT);
-    
-    await logActivity('info', `Will visit up to ${MAX_PAGES_TO_VISIT} prioritized pages, starting with batch of ${allPrioritizedLinks.length}`);
-    
-    // Create initial batches
-    let batches = [];
-    for (let i = 0; i < allPrioritizedLinks.length; i += BATCH_SIZE) {
-      batches.push(allPrioritizedLinks.slice(i, i + BATCH_SIZE));
-    }
-    
-    await logActivity('info', `Split ${allPrioritizedLinks.length} pages into ${batches.length} batches of ${BATCH_SIZE}`);
-    
-    let pagesVisited = 0;
-    let pagesSuccessful = 0;
-    
-    // Process batches
-    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-      const batch = batches[batchIndex];
-      await logActivity('info', `Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} pages`);
-      
-      // Visit pages in this batch concurrently
-      const batchResults = await Promise.all(
-        batch.map(linkObj => visitPage(linkObj.url, context, domainTracker, allVisitedUrls, linkObj.depth))
-      );
-      
-      // Filter out null results and add to our pages collection
-      const successfulPages = batchResults.filter(page => page !== null);
-      visitedPages.push(...successfulPages);
-      
-      pagesVisited += batch.length;
-      pagesSuccessful += successfulPages.length;
-      
-      await logActivity('info', `Batch ${batchIndex + 1} complete: ${successfulPages.length}/${batch.length} pages successful`);
-      
-      // Add links from these pages to our queue for subsequent batches
-      successfulPages.forEach(page => {
-        addLinksToQueue(page, 0.5); // Lower priority for links from deeper pages
-      });
-      
-      // Process this batch for content if we have successful pages
-      if (successfulPages.length > 0) {
-        await processPageBatch(successfulPages, companyName, companyDescription, contentBatches, BATCH_SIZE);
-      }
-      
-      // Re-evaluate the remaining links and rebuild future batches
-      // This is the important fix - we need to update batches based on newly discovered links
-      if (pagesVisited < MAX_PAGES_TO_VISIT) {
-        // Get all prioritized links again including newly discovered ones
-        const remainingLinks = getNextBatchOfLinks();
-        
-        // Calculate how many more pages we can visit
-        const remainingLimit = MAX_PAGES_TO_VISIT - pagesVisited;
-        const linksToProcess = remainingLinks.slice(0, remainingLimit);
-        
-        if (linksToProcess.length > 0) {
-          // Clear existing future batches
-          batches.splice(batchIndex + 1); 
-          
-          // Create new batches for remaining links
-          for (let i = 0; i < linksToProcess.length; i += BATCH_SIZE) {
-            batches.push(linksToProcess.slice(i, i + BATCH_SIZE));
-          }
-          
-          await logActivity('info', `Updated crawl queue with ${linksToProcess.length} pages in ${batches.length - (batchIndex + 1)} new batches`);
-        }
-      }
-      
-      // Check if we've reached our max pages limit
-      if (pagesVisited >= MAX_PAGES_TO_VISIT) {
-        await logActivity('info', `Reached maximum page limit of ${MAX_PAGES_TO_VISIT}`);
-        break;
-      }
-    }
-    
-    await logActivity('info', `Standard website crawl with batching completed. Visited ${pagesVisited} pages, successfully extracted ${pagesSuccessful} pages`);
-    
-    // After processing all pages, log summary
-    await logActivity('INFO', `Crawl completed - pages visited: ${visitedPages.length}`);
-    
-    return {
-      pages: visitedPages,
-      contentBatches: contentBatches,
-      allQueuedUrls: allQueuedUrls
-    };
-      } catch (error) {
-    await logActivity('error', `Error in standard crawl:`, {
-      errorMessage: error.message,
-      stack: error.stack
-    });
-    throw error;
-  } finally {
-    await browser.close();
-  }
-}
 
 /**
  * Process a batch of pages to generate content sections
@@ -2495,8 +1614,6 @@ async function generateLLMSBatchedContent(crawlResults, companyName, companyDesc
         // If no batches were created for this section, generate it from scratch
         await logActivity('info', `No batches found for ${sectionName} section, generating from scratch`);
         
-        // Get the Gemini model
-        const model = getGeminiModel('standard');
         
         // Prepare the data for the model
         const processedData = {
@@ -2858,4 +1975,312 @@ function hasSectionContent(section) {
   if (!section) return false;
   const withoutHeader = section.replace(/^## [^\n]+\n*/g, '').trim();
   return withoutHeader.length > 0;
+}
+
+/**
+ * Unified crawling function for both LLMS.txt and LLMS-full.txt generation
+ * @param {string} websiteUrl - URL of the website to crawl
+ * @param {string} companyName - Name of the company
+ * @param {string} companyDescription - Description of the company
+ * @param {Object} options - Configuration options
+ * @param {number} options.maxPages - Maximum number of pages to visit (default 30)
+ * @param {number} options.batchSize - Number of pages to process in each batch (default 10)
+ * @param {number} options.maxDepth - Maximum depth from homepage (default 2)
+ * @param {Object} options.contentBatchPrompts - Custom prompts for each section
+ * @returns {Promise<Object>} - Object containing pages and content batches
+ */
+async function crawlWebsite(websiteUrl, companyName, companyDescription, options = {}) {
+  const {
+    maxPages = 30,
+    batchSize = 10,
+    maxDepth = 2,
+    contentBatchPrompts = {}
+  } = options;
+  
+  await logActivity('info', `Starting website crawl: ${websiteUrl}`, { maxPages, maxDepth, batchSize });
+  
+  // Initialize browser and context for crawling
+  const browser = await playwright.chromium.launch({
+    headless: true
+  });
+  const context = await browser.newContext({
+    userAgent: 'LLMSTxtGenerator/1.0'
+  });
+  
+  // Set up data structures for crawling
+  const domainTracker = createDomainTracker(websiteUrl);
+  const allVisitedUrls = new Set();
+  const allQueuedUrls = new Set();
+  const visitedPages = [];
+  
+  // Initialize the result structure with empty arrays for batches
+  const contentBatches = {
+    mission: [],
+    products: [],
+    links: [],
+    policies: []
+  };
+  
+  try {
+    await logActivity('info', `Beginning website crawl with batching for ${websiteUrl}`, { maxPages, maxDepth });
+    
+    // Set for tracking all URLs we've visited or queued
+    allVisitedUrls.clear(); 
+    allQueuedUrls.clear();
+    
+    // Find the index page
+    const indexPage = await visitPage(websiteUrl, context, domainTracker, allVisitedUrls, 0);
+    if (!indexPage) {
+      throw new Error(`Failed to load the index page: ${websiteUrl}`);
+    }
+    
+    // Add the initial page to our results
+    visitedPages.push(indexPage);
+    
+    // Extract links from the index page
+    const linksToVisit = new Map(); // Use a Map to store links with priority score
+    
+    // Helper function to add links to our queue with priority
+    async function addLinksToQueue(page, basePriority = 1) {
+      if (!page.links || !Array.isArray(page.links)) return;
+      
+      // Skip if we're already at max depth
+      if (page.depth >= maxDepth) {
+        await logActivity('debug', `Skipping links from ${page.url} - max depth (${maxDepth}) reached`);
+        return;
+      }
+      
+      page.links.forEach(link => {
+        if (!link || !link.url) return;
+        
+        try {
+          // Skip if already queued or visited
+          if (allQueuedUrls.has(link.url) || allVisitedUrls.has(link.url)) return;
+          
+          // Check if it's a related domain we should follow
+          if (!domainTracker.isRelatedDomain(link.url)) return;
+          
+          // Calculate priority score for this link
+          let priorityScore = basePriority;
+          
+          // Decrease priority based on depth
+          priorityScore = priorityScore * (maxDepth - page.depth);
+          
+          // Increase priority for certain types of pages
+          const url = link.url.toLowerCase();
+          const text = (link.text || '').toLowerCase();
+          
+          // Documentation gets highest priority
+          if (url.includes('/docs') || 
+              url.includes('/documentation') || 
+              url.includes('/guide') || 
+              url.includes('/manual') ||
+              url.includes('/help') ||
+              text.includes('docs') || 
+              text.includes('documentation') || 
+              text.includes('guide')) {
+            priorityScore += 5;
+          }
+          
+          // API and developer pages
+          else if (url.includes('/api') || 
+                   url.includes('/developer') ||
+                   text.includes('api') || 
+                   text.includes('developer')) {
+            priorityScore += 4;
+          }
+          
+          // Product pages
+          else if (url.includes('/product') || 
+                   url.includes('/feature') ||
+                   text.includes('product') || 
+                   text.includes('feature')) {
+            priorityScore += 3;
+          }
+          
+          // About, company info
+          else if (url.includes('/about') || 
+                   url.includes('/company') ||
+                   url.includes('/team') ||
+                   text.includes('about') || 
+                   text.includes('company') ||
+                   text.includes('team')) {
+            priorityScore += 2;
+          }
+          
+          // Blog, resources
+          else if (url.includes('/blog') || 
+                   url.includes('/resource') ||
+                   url.includes('/news') ||
+                   text.includes('blog') || 
+                   text.includes('resource') ||
+                   text.includes('news')) {
+            priorityScore += 1;
+          }
+          
+          // Policy pages
+          else if (url.includes('/privacy') || 
+                   url.includes('/terms') ||
+                   url.includes('/policy') ||
+                   url.includes('/legal') ||
+                   text.includes('privacy') || 
+                   text.includes('terms') ||
+                   text.includes('policy') ||
+                   text.includes('legal')) {
+            priorityScore += 1;
+          }
+          
+          // Add to queue with priority and depth
+          linksToVisit.set(link.url, {
+            url: link.url,
+            text: link.text,
+            priority: priorityScore,
+            depth: page.depth + 1
+          });
+          
+          // Mark as queued
+          allQueuedUrls.add(link.url);
+        } catch {
+          // Skip invalid links
+        }
+      });
+    }
+    
+    // Add index page links to queue
+    addLinksToQueue(indexPage, 2); // Higher base priority for homepage links
+    
+    // Check for documentation/API subdomains
+    const subdomains = [
+      { subdomain: 'docs', label: 'Documentation' },
+      { subdomain: 'developer', label: 'Developer Documentation' },
+      { subdomain: 'developers', label: 'Developers Documentation' },
+      { subdomain: 'api', label: 'API Documentation' },
+      { subdomain: 'help', label: 'Help Center' },
+      { subdomain: 'support', label: 'Support Center' },
+      { subdomain: 'community', label: 'Community' },
+      { subdomain: 'blog', label: 'Blog' },
+      {subdomain: 'forum', label: 'Forum'}
+    ];
+    
+    // Check all potential subdomains
+    for (const { subdomain, label } of subdomains) {
+      const subdomainUrl = `https://${subdomain}.${domainTracker.rootDomain}`;
+      try {
+        const response = await axios.head(subdomainUrl, { timeout: 5000 });
+        if (response.status < 400) {
+          // Add to queue with high priority
+          linksToVisit.set(subdomainUrl, {
+            url: subdomainUrl,
+            text: label,
+            priority: 10 // Very high priority
+          });
+          allQueuedUrls.add(subdomainUrl);
+          await logActivity('info', `Added ${label} site ${subdomainUrl} to crawl queue`);
+        }
+      } catch (error) {
+        // Subdomain doesn't exist or isn't accessible
+      }
+    }
+    
+    // Function to get prioritized links that haven't been visited yet
+    function getNextBatchOfLinks() {
+      return Array.from(linksToVisit.values())
+        .filter(link => !allVisitedUrls.has(link.url)) // Only unvisited links
+        .sort((a, b) => b.priority - a.priority); // Descending by priority
+    }
+    
+    // Get initial set of links to visit
+    let allPrioritizedLinks = getNextBatchOfLinks().slice(0, maxPages);
+    
+    await logActivity('info', `Will visit up to ${maxPages} prioritized pages, starting with batch of ${allPrioritizedLinks.length}`);
+    
+    // Create initial batches
+    let batches = [];
+    for (let i = 0; i < allPrioritizedLinks.length; i += batchSize) {
+      batches.push(allPrioritizedLinks.slice(i, i + batchSize));
+    }
+    
+    await logActivity('info', `Split ${allPrioritizedLinks.length} pages into ${batches.length} batches of ${batchSize}`);
+    
+    let pagesVisited = 0;
+    let pagesSuccessful = 0;
+    
+    // Process batches
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      await logActivity('info', `Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} pages`);
+      
+      // Visit pages in this batch concurrently
+      const batchResults = await Promise.all(
+        batch.map(linkObj => visitPage(linkObj.url, context, domainTracker, allVisitedUrls, linkObj.depth))
+      );
+      
+      // Filter out null results and add to our pages collection
+      const successfulPages = batchResults.filter(page => page !== null);
+      visitedPages.push(...successfulPages);
+      
+      pagesVisited += batch.length;
+      pagesSuccessful += successfulPages.length;
+      
+      await logActivity('info', `Batch ${batchIndex + 1} complete: ${successfulPages.length}/${batch.length} pages successful`);
+      
+      // Add links from these pages to our queue for subsequent batches
+      successfulPages.forEach(page => {
+        addLinksToQueue(page, 0.5); // Lower priority for links from deeper pages
+      });
+      
+      // Process this batch for content if we have successful pages
+      if (successfulPages.length > 0) {
+        await processPageBatch(successfulPages, companyName, companyDescription, contentBatches, batchSize);
+      }
+      
+      // Re-evaluate the remaining links and rebuild future batches
+      // This is the important fix - we need to update batches based on newly discovered links
+      if (pagesVisited < maxPages) {
+        // Get all prioritized links again including newly discovered ones
+        const remainingLinks = getNextBatchOfLinks();
+        
+        // Calculate how many more pages we can visit
+        const remainingLimit = maxPages - pagesVisited;
+        const linksToProcess = remainingLinks.slice(0, remainingLimit);
+        
+        if (linksToProcess.length > 0) {
+          // Clear existing future batches
+          batches.splice(batchIndex + 1); 
+          
+          // Create new batches for remaining links
+          for (let i = 0; i < linksToProcess.length; i += batchSize) {
+            batches.push(linksToProcess.slice(i, i + batchSize));
+          }
+          
+          await logActivity('info', `Updated crawl queue with ${linksToProcess.length} pages in ${batches.length - (batchIndex + 1)} new batches`);
+        }
+      }
+      
+      // Check if we've reached our max pages limit
+      if (pagesVisited >= maxPages) {
+        await logActivity('info', `Reached maximum page limit of ${maxPages}`);
+        break;
+      }
+    }
+    
+    await logActivity('info', `Website crawl with batching completed. Visited ${pagesVisited} pages, successfully extracted ${pagesSuccessful} pages`);
+    
+    // After processing all pages, log summary
+    await logActivity('INFO', `Crawl completed - pages visited: ${visitedPages.length}`);
+    
+    return {
+      pages: visitedPages,
+      contentBatches: contentBatches,
+      allQueuedUrls: allQueuedUrls
+    };
+  } catch (error) {
+    await logActivity('error', `Error in crawl:`, {
+      errorMessage: error.message,
+      stack: error.stack
+    });
+    throw error;
+  } finally {
+    await browser.close();
+  }
 }
