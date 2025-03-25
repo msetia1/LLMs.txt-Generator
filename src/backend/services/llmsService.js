@@ -171,8 +171,8 @@ exports.generateLLMSTxt = async (companyName, companyDescription, websiteUrl, em
     // Crawl website using the unified crawlWebsite function with standard configuration
     await logActivity('info', 'Beginning website crawl with batch processing');
     const crawlResults = await crawlWebsite(normalizedUrl, companyName, companyDescription, {
-      maxPages: 30,
-      batchSize: 10,
+      maxPages: 50,
+      batchSize: 20,
       maxDepth: 2
     });
     crawlEndTime = Date.now();
@@ -245,9 +245,9 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
     // Perform deeper crawl with the unified crawlWebsite function
     await logActivity('info', 'Beginning enhanced website crawl for LLMS-full.txt');
     const crawlResults = await crawlWebsite(normalizedUrl, companyName, companyDescription, {
-      maxPages: 50,
-      batchSize: 10,
-      maxDepth: 2
+      maxPages: 300,  // Increased from 30 for more comprehensive coverage
+      batchSize: 50,
+      maxDepth: 3    // Increased from 2 to get deeper content
     });
     crawlEndTime = Date.now();
     await logActivity('info', 'Enhanced website crawl completed', { 
@@ -260,12 +260,12 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
       }
     });
     
-    // Generate enhanced content with AI
+    // Generate content with AI using batched content - using the FULL version
     await logActivity('info', 'Generating comprehensive LLMS-full.txt content with AI');
-    const llmsFullContent = await generateLLMSFullContent(crawlResults, companyName, companyDescription);
+    const llmsContent = await generateLLMSFullBatchedContent(crawlResults, companyName, companyDescription);
     geminiEndTime = Date.now();
     await logActivity('info', 'LLMS-full.txt content generation completed', { 
-      contentLength: llmsFullContent.length 
+      contentLength: llmsContent.length 
     });
     
     // Add statistics after final content
@@ -281,17 +281,14 @@ exports.generateLLMSFullTxt = async (companyName, companyDescription, websiteUrl
     console.log(`Total processing time: ${(geminiEndTime - startTime) / 1000} seconds`);
     console.log('------------------------\n');
     
-    return llmsFullContent;
+    return llmsContent;
   } catch (error) {
     await logActivity('error', 'Error in LLMS-full.txt generation', { 
       error: error.message, stack: error.stack 
     });
-    
-    // Re-throw with enhanced message for the controller
     throw error;
   }
 }
-
 
 /**
  * Process a batch of pages to generate content sections
@@ -779,403 +776,6 @@ async function extractPageDetails(page) {
       structuredContent
     };
   });
-}
-
-/**
- * Prioritize links based on importance
- * @param {Array} links - Array of link objects
- * @param {string} websiteUrl - Base URL of the website
- * @param {Object} domainTracker - Domain tracker object
- * @returns {Array} - Prioritized array of link objects
- */
-function prioritizeLinks(links, websiteUrl, domainTracker) {
-  // Filter out external links, anchors, etc.
-  const filteredLinks = links.filter(link => {
-    try {
-    const url = new URL(link.url);
-    
-      // Keep only links from related domains (checked with domainTracker)
-      return domainTracker.isRelatedDomain(link.url) &&
-           // Filter out common non-content pages
-           !url.pathname.includes('/wp-admin/') &&
-           !url.pathname.includes('/wp-login.php') &&
-           !url.pathname.endsWith('.jpg') &&
-           !url.pathname.endsWith('.png') &&
-           !url.pathname.endsWith('.gif') &&
-           !url.pathname.endsWith('.pdf') &&
-             // Filter out anchor links within the same page
-           !link.url.includes('#') &&
-           // Filter out duplicate links
-           links.findIndex(l => l.url === link.url) === links.indexOf(link);
-    } catch (error) {
-      return false;
-    }
-  });
-  
-  // Score and sort links by importance
-  const scoredLinks = filteredLinks.map(link => {
-    let score = 0;
-    const lowerText = (link.text || '').toLowerCase();
-    const lowerUrl = link.url.toLowerCase();
-    
-    // Super high priority for documentation pages
-    if (isDocumentationPage(link.url)) {
-      score += 50;  // Give very high priority to any documentation page
-      
-      // Even higher priority for key documentation pages
-      if (lowerUrl.includes('/docs/getting-started') || 
-          lowerUrl.includes('/docs/introduction') ||
-          lowerUrl.includes('/docs/overview') ||
-          lowerUrl.includes('/docs/guides') ||
-          lowerUrl.includes('/docs/tutorials') ||
-          lowerUrl.includes('/api/reference') ||
-          lowerUrl.includes('/api-reference') ||
-          lowerUrl.endsWith('/docs') ||
-          lowerUrl.endsWith('/documentation') ||
-          lowerUrl.endsWith('/api')) {
-        score += 30;
-      }
-      
-      // Priority for API documentation
-      if (lowerUrl.includes('/api') || lowerText.includes('api')) {
-        score += 25;
-      }
-      
-      // Priority for SDK or developer documentation
-      if (lowerUrl.includes('/sdk') || 
-          lowerUrl.includes('/developer') ||
-          lowerText.includes('sdk') ||
-          lowerText.includes('developer')) {
-        score += 20;
-      }
-    }
-    
-    // Check if this is a related subdomain
-    try {
-      const hostname = new URL(link.url).hostname;
-      if (domainTracker.knownDocsDomains.has(hostname)) {
-        score += 40; // Very high priority for known documentation domains
-      }
-      else if (domainTracker.relatedSubdomains.has(hostname)) {
-        score += 5; // Some priority for related subdomains
-      }
-    } catch {
-      // Ignore URL parsing errors
-    }
-    
-    // Prioritize important pages
-    if (lowerUrl.includes('/about') || lowerText.includes('about')) score += 10;
-    if (lowerUrl.includes('/product') || lowerText.includes('product')) score += 8;
-    if (lowerUrl.includes('/service') || lowerText.includes('service')) score += 8;
-    if (lowerUrl.includes('/feature') || lowerText.includes('feature')) score += 7;
-    if (lowerUrl.includes('/pricing') || lowerText.includes('pricing')) score += 6;
-    if (lowerUrl.includes('/contact') || lowerText.includes('contact')) score += 5;
-    if (lowerUrl.includes('/blog') || lowerText.includes('blog')) score += 4;
-    
-    // Prioritize policy pages
-    if (lowerUrl.includes('/privacy') || lowerText.includes('privacy')) score += 6;
-    if (lowerUrl.includes('/term') || lowerText.includes('term')) score += 6;
-    if (lowerUrl.includes('/legal') || lowerText.includes('legal')) score += 6;
-    
-    // Special priority for navigation links
-    if (link.isNavLink) {
-      score += 15;
-    }
-    
-    // Lower priority for deep paths, but not for documentation
-    if (!isDocumentationPage(link.url)) {
-      try {
-        const pathSegments = new URL(link.url).pathname.split('/').filter(Boolean);
-      score -= pathSegments.length;
-      } catch {
-        // Ignore URL parsing errors
-      }
-    }
-    
-    return { ...link, score };
-  });
-  
-  // Sort by score (highest first)
-  return scoredLinks.sort((a, b) => b.score - a.score);
-}
-
-/**
- * Generate content for LLMS-full.txt using Google Generative AI
- * @param {Array} pages - Array of page data with titles and content
- * @param {String} companyName - Name of the company 
- * @param {String} companyDescription - Description of the company
- * @returns {Promise<String>} - Generated LLMS-full.txt content
- */
-async function generateLLMSFullContent(crawlResults, companyName, companyDescription) {
-  try {
-    // Get pages and pre-generated content batches from the crawler
-    const { pages, contentBatches } = crawlResults;
-    
-    // Get the Gemini model for more detailed content and final consolidation
-    const model = getGeminiModel('advanced');
-    
-    // Helper function to deduplicate and consolidate content from batches
-    async function consolidateSection(sectionName, contentArray) {
-      if (!contentArray || contentArray.length === 0) {
-        // If no batches were created for this section, generate it from scratch
-        await logActivity('info', `No batches found for ${sectionName} section, generating from scratch`);
-        
-        // Prepare the data for the model
-        const processedData = processWebsiteDataForLLMSFull(pages, companyName, companyDescription);
-        
-        let prompt = '';
-        switch(sectionName) {
-          case 'mission':
-            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Mission Statement" section for an LLMS-full.txt file. This should be 2-3 paragraphs that thoroughly explain the company's purpose, vision, and core objectives.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-WEBSITE DATA:
-${JSON.stringify(processedData, null, 2)}
-
-Generate ONLY the mission statement section, starting with "## Mission Statement".`;
-            break;
-          case 'products':
-            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS-full.txt file. This should be a comprehensive overview of the company's main offerings, with subsections for each major product or service category.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-IMPORTANT: If there is no product or service information in the provided data, return an empty string. DO NOT generate a "no information available" message.
-
-WEBSITE DATA:
-${JSON.stringify(processedData.products || [], null, 2)}
-
-Generate ONLY the products/services section, starting with "## Key Products/Services".`;
-            break;
-          case 'links':
-            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS-full.txt file. This should be a comprehensive organization of all important URLs from the company website, grouped into logical categories.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-WEBSITE DATA:
-${JSON.stringify(processedData.pages || [], null, 2)}
-
-Generate ONLY the links section, starting with "## Important Links".`;
-            break;
-          case 'policies':
-            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Policies" section for an LLMS-full.txt file. List each policy ONLY as a title followed by its URL without any description or explanation. Format each policy as "Policy Title: URL" on its own line.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-WEBSITE DATA:
-${JSON.stringify(processedData.policies || [], null, 2)}
-
-Generate ONLY the policies section, starting with "## Policies".`;
-            break;
-          case 'values':
-            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Company Values and Approach" section for an LLMS-full.txt file. This should be a concluding section that captures the company's ethos, approach, and core values.
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-WEBSITE DATA:
-${JSON.stringify(processedData, null, 2)}
-
-Generate ONLY the company values and approach section, starting with "## Company Values and Approach".`;
-            break;
-        }
-        
-        // Log the FULL prompt being sent to Gemini, not just a preview
-        await logActivity('INFO', `Full prompt being sent to Gemini for ${sectionName} section (LLMS-full)`, {
-          completePrompt: prompt // Log the entire prompt
-        });
-        
-        try {
-          const sectionResult = await model.generateContent(prompt);
-          // Log the full response from Gemini
-          await logActivity('INFO', `Full response received from Gemini for ${sectionName} section (LLMS-full)`, {
-            completeResponse: sectionResult.response.text()
-          });
-          return sectionResult.response.text();
-        } catch (error) {
-          await logActivity('error', `Error generating ${sectionName} section:`, {
-            errorMessage: error.message
-          });
-          return `## ${sectionName.charAt(0).toUpperCase() + sectionName.slice(1)}\n\nNo information available.`;
-        }
-      }
-      
-      // If we have multiple batches, consolidate them
-      if (contentArray.length === 1) {
-        // If there's only one batch, just return it directly
-        return contentArray[0];
-      }
-      
-      // For multiple batches, ask the model to consolidate and remove duplicates
-      await logActivity('info', `Consolidating ${contentArray.length} batches for ${sectionName} section`);
-      
-      // Log consolidation input
-      await logActivity('INFO', `Consolidating section: ${sectionName}`, {
-          batchCount: contentArray.length,
-          totalContentLength: contentArray.reduce((sum, content) => sum + content.length, 0)
-      });
-      
-      // Log a sample of content being consolidated (first batch)
-      if (contentArray.length > 0) {
-          await logActivity('DEBUG', `Sample content for ${sectionName}:`, {
-              sampleContent: contentArray[0].substring(0, 300) + '...'
-          });
-      }
-      
-      // Prepare the consolidation prompt
-      const consolidationPrompt = `Below are multiple versions of the "${sectionName}" section for an LLMS-full.txt file for ${companyName}. These were generated from different batches of pages from the website.
-
-Please create a single comprehensive version that:
-1. Combines all unique information from the versions below
-2. Removes any duplicates
-3. Organizes the information logically
-4. Formats it appropriately for an LLMS-full.txt file
-5. Ensures it's clear and concise
-
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved or consolidated the content. DO NOT include any bullet points describing your organization methods, removed duplicates, URL prioritization, or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
-
-Versions:
-${contentArray.map((content, i) => `\n--- VERSION ${i+1} ---\n${content}`).join('\n')}
-
-Create a single consolidated version of the "${sectionName}" section, starting with the same heading format as in the versions above.`;
-      
-      try {
-        const consolidatedResult = await model.generateContent(consolidationPrompt);
-        return consolidatedResult.response.text();
-      } catch (error) {
-        await logActivity('error', `Error consolidating ${sectionName} section:`, {
-          errorMessage: error.message
-        });
-        // If consolidation fails, just return the longest batch as a fallback
-        return contentArray.reduce((longest, current) => 
-          current.length > longest.length ? current : longest, contentArray[0]);
-      }
-    }
-    
-    // Consolidate each section from batches
-    await logActivity('info', 'Consolidating content from all batches');
-    const [missionSection, productsSection, linksSection, policiesSection, valuesSection] = await Promise.all([
-      consolidateSection('mission', contentBatches.mission),
-      consolidateSection('products', contentBatches.products),
-      consolidateSection('links', contentBatches.links),
-      consolidateSection('policies', contentBatches.policies),
-      consolidateSection('values', contentBatches.values)
-    ]);
-    
-    // Combine all sections
-    const fullContent = `# ${companyName}${
-      hasSectionContent(missionSection) ? `\n\n${missionSection}` : ''
-    }${
-      hasSectionContent(productsSection) ? `\n\n${productsSection}` : ''
-    }${
-      hasSectionContent(linksSection) ? `\n\n${linksSection}` : ''
-    }${
-      hasSectionContent(policiesSection) ? `\n\n${policiesSection}` : ''
-    }`;
-
-    await logActivity('info', 'LLMS-full.txt content generation completed', {
-      contentLength: fullContent.length
-    });
-
-    return cleanMarkdownFormatting(fullContent);
-  } catch (error) {
-    console.error("Error in LLMS-full.txt generation:", error);
-    return `Error generating content: ${error.message}`;
-  }
-}
-
-/**
- * Process website data specifically for LLMS-full.txt generation
- * This extracts features, policies, and other structured data from pages
- */
-function processWebsiteDataForLLMSFull(pages, companyName, companyDescription) {
-  // Extract policies (privacy policy, terms of service, etc.)
-  const policies = pages
-    .filter(page => {
-      const lowerTitle = page.title.toLowerCase();
-      const lowerUrl = page.url.toLowerCase();
-      return lowerTitle.includes('privacy') || 
-             lowerTitle.includes('policy') || 
-             lowerTitle.includes('terms') || 
-             lowerTitle.includes('legal') ||
-             lowerUrl.includes('privacy') || 
-             lowerUrl.includes('policy') || 
-             lowerUrl.includes('terms') || 
-             lowerUrl.includes('legal');
-    })
-    .map(page => ({
-      title: page.title,
-      url: page.url
-    }));
-  
-  // Extract documentation pages
-  const documentation = pages
-    .filter(page => page.isDocumentation)
-    .map(page => ({
-      title: page.title,
-      url: page.url
-    }));
-  
-  // Extract product pages
-  const products = pages
-    .filter(page => {
-      const lowerTitle = page.title.toLowerCase();
-      const lowerUrl = page.url.toLowerCase();
-      return (lowerTitle.includes('product') || 
-              lowerTitle.includes('feature') || 
-              lowerUrl.includes('product') || 
-              lowerUrl.includes('feature')) &&
-             !page.isDocumentation;
-    })
-    .map(page => ({
-      name: page.title,
-      description: page.metaDescription || '',
-      url: page.url
-    }));
-  
-  // Extract FAQ pages
-  const faqs = pages
-    .filter(page => {
-      const lowerTitle = page.title.toLowerCase();
-      const lowerUrl = page.url.toLowerCase();
-      return lowerTitle.includes('faq') || 
-             lowerTitle.includes('frequently asked') || 
-             lowerUrl.includes('faq') || 
-             lowerUrl.includes('frequently-asked');
-    })
-    .map(page => ({
-      question: page.title,
-      url: page.url
-    }));
-  
-  // Find contact information
-  const contactPage = pages.find(page => {
-    const lowerTitle = page.title.toLowerCase();
-    const lowerUrl = page.url.toLowerCase();
-    return lowerTitle.includes('contact') || 
-           lowerUrl.includes('contact');
-  });
-  
-  // Prepare simplified pages data
-  const simplifiedPages = pages.map(page => ({
-    title: page.title,
-    url: page.url,
-    isDocumentation: page.isDocumentation || false
-  }));
-  
-  // Return structured data
-  return {
-    companyName,
-    companyDescription,
-    baseUrl: pages.length > 0 ? new URL(pages[0].url).origin : '',
-    pages: simplifiedPages,
-    policies,
-    documentation,
-    products,
-    faqs,
-    contact: contactPage ? {
-      title: contactPage.title,
-      url: contactPage.url
-    } : null
-  };
 }
 
 /**
@@ -2282,5 +1882,390 @@ async function crawlWebsite(websiteUrl, companyName, companyDescription, options
     throw error;
   } finally {
     await browser.close();
+  }
+}
+
+/**
+ * Generate LLMS-full.txt content from batched content results with more comprehensive output
+ * @param {Object} crawlResults - Results from the website crawl, including pages and content batches
+ * @param {string} companyName - Name of the company
+ * @param {string} companyDescription - Description of the company
+ * @returns {Promise<String>} - Generated LLMS-full.txt content
+ */
+async function generateLLMSFullBatchedContent(crawlResults, companyName, companyDescription) {
+  try {
+    // Get pages and pre-generated content batches from the crawler
+    const { pages, contentBatches } = crawlResults;
+    
+    // Get the Gemini model for consolidation - use advanced model for fuller content
+    const model = getGeminiModel('advanced');
+    
+    // Helper function to consolidate section content from batches
+    async function consolidateSection(sectionName, contentArray) {
+      if (!contentArray || contentArray.length === 0) {
+        // If no batches were created for this section, generate it from scratch
+        await logActivity('info', `No batches found for ${sectionName} section, generating from scratch`);
+        
+        // Prepare the data for the model
+        const processedData = {
+          companyName,
+          companyDescription,
+          pages: pages.slice(0, 50).map(page => ({
+            title: page.title,
+            metaDescription: page.metaDescription || '',
+            headings: page.headings || [],
+            url: page.url,
+            content: page.content ? page.content.substring(0, 5000) : '' // Increased content length for fuller analysis
+          }))
+        };
+        
+        // Process links specifically to ensure diversity for the links section
+        if (sectionName === 'links') {
+          // Collect all links from all pages
+          const allLinks = [];
+          pages.forEach(page => {
+            if (page.links && Array.isArray(page.links)) {
+              const pageLinks = page.links.filter(link => 
+                link && 
+                link.url && 
+                link.url.trim() !== '' && 
+                link.text && 
+                link.text.trim() !== '' &&
+                link.text.length > 1
+              );
+              allLinks.push(...pageLinks);
+            }
+          });
+          
+          // Better deduplication that preserves specific paths over generic ones
+          const uniqueLinks = {};
+          const domainPaths = new Map();
+          
+          // First pass: Collect all links and organize by domain
+          allLinks.forEach(link => {
+            try {
+              const url = new URL(link.url);
+              const domain = url.hostname;
+              const path = url.pathname + url.search + url.hash;
+              
+              if (path === '' || path === '/') return;
+              
+              if (!domainPaths.has(domain)) {
+                domainPaths.set(domain, new Set());
+              }
+              
+              domainPaths.get(domain).add(path);
+              
+              const linkKey = `${domain}${path}`;
+              
+              if (!uniqueLinks[linkKey] || 
+                  uniqueLinks[linkKey].text.length < link.text.length || 
+                  link.text.includes(uniqueLinks[linkKey].text)) {
+                uniqueLinks[linkKey] = {
+                  ...link,
+                  specificPath: path !== '/' && path !== ''
+                };
+              }
+            } catch (e) {
+              // Skip invalid URLs
+            }
+          });
+          
+          // Extract unique links, prioritizing specific paths
+          const processedLinks = Object.values(uniqueLinks)
+            .sort((a, b) => {
+              if (a.specificPath && !b.specificPath) return -1;
+              if (!a.specificPath && b.specificPath) return 1;
+              return b.text.length - a.text.length;
+            });
+            
+          // Categorize links with enhanced categories
+          const categorizedLinks = {
+            documentation: [],
+            products: [],
+            support: [],
+            community: [],
+            company: [],
+            resources: [],
+            technical: [], // New category for technical content
+            general: []
+          };
+          
+          processedLinks.forEach(link => {
+            try {
+              const url = new URL(link.url);
+              const path = url.pathname.toLowerCase();
+              const text = link.text.toLowerCase();
+              
+              if (path.includes('/docs') || path.includes('/documentation') || 
+                  path.includes('/guide') || path.includes('/tutorial') || 
+                  path.includes('/manual') || url.hostname.startsWith('docs.') || 
+                  text.includes('docs') || text.includes('documentation') || 
+                  text.includes('guide') || text.includes('manual')) {
+                categorizedLinks.documentation.push(link);
+              } else if (path.includes('/api') || path.includes('/sdk') || 
+                        path.includes('/developer') || path.includes('/integration') || 
+                        text.includes('api') || text.includes('sdk') || 
+                        text.includes('developer') || text.includes('integration')) {
+                categorizedLinks.technical.push(link);
+              } else if (path.includes('/product') || path.includes('/feature') || 
+                        path.includes('/pricing') || path.includes('/download') || 
+                        text.includes('product') || text.includes('feature') || 
+                        text.includes('pricing') || text.includes('download')) {
+                categorizedLinks.products.push(link);
+              } else if (path.includes('/support') || path.includes('/help') || 
+                        path.includes('/faq') || path.includes('/ticket') || 
+                        text.includes('support') || text.includes('help') || 
+                        text.includes('faq') || text.includes('ticket')) {
+                categorizedLinks.support.push(link);
+              } else if (path.includes('/community') || path.includes('/forum') || 
+                        path.includes('/discuss') || path.includes('/slack') || 
+                        text.includes('community') || text.includes('forum') || 
+                        text.includes('discuss') || text.includes('join')) {
+                categorizedLinks.community.push(link);
+              } else if (path.includes('/about') || path.includes('/team') || 
+                        path.includes('/mission') || path.includes('/values') || 
+                        path.includes('/contact') || path.includes('/careers') || 
+                        text.includes('about') || text.includes('company') || 
+                        text.includes('mission') || text.includes('values') || 
+                        text.includes('contact') || text.includes('careers')) {
+                categorizedLinks.company.push(link);
+              } else if (path.includes('/blog') || path.includes('/resource') || 
+                        path.includes('/article') || path.includes('/news') || 
+                        path.includes('/media') || path.includes('/press') || 
+                        text.includes('blog') || text.includes('resource') || 
+                        text.includes('article') || text.includes('news')) {
+                categorizedLinks.resources.push(link);
+              } else {
+                categorizedLinks.general.push(link);
+              }
+            } catch (e) {
+              categorizedLinks.general.push(link);
+            }
+          });
+          
+          processedData.categorizedLinks = categorizedLinks;
+          
+          const allRealUrls = processedLinks.map(link => ({
+            url: link.url,
+            description: link.text
+          }));
+          
+          // Enhanced prompt for LLMS-full.txt links section
+          const prompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS-full.txt file. This should be a comprehensive organization of all important URLs from the company website, including:
+- Documentation and API references
+- Product pages and feature descriptions
+- Support resources and knowledge bases
+- Community and developer resources
+- Company information and contact details
+- Blog posts and technical articles
+
+Each link should be in the format "- [Link Title](URL): Detailed paragraph description explaining the resource and its value"
+
+CRITICAL REQUIREMENTS FOR URL USAGE:
+1. ONLY use complete URLs that are EXPLICITLY present in the provided website data
+2. DO NOT create or infer any URLs
+3. Group links into logical categories with clear headings
+4. Prioritize specific, deep links over generic landing pages
+5. Include context about the resource type and intended audience
+
+CATEGORIZED LINKS DATA:
+${JSON.stringify(processedData.categorizedLinks || {}, null, 2)}
+
+ALL AVAILABLE URLS:
+${JSON.stringify(allRealUrls.slice(0, 50), null, 2)}
+
+Generate ONLY the links section, starting with "## Important Links".`;
+
+          try {
+            const sectionResult = await model.generateContent(prompt);
+            await logActivity('INFO', `Complete links section generated for LLMS-full.txt:`, {
+              fullResponse: sectionResult.response.text()
+            });
+            return sectionResult.response.text();
+          } catch (error) {
+            await logActivity('error', `Error generating ${sectionName} section:`, {
+              errorMessage: error.message
+            });
+            return `## ${sectionName.charAt(0).toUpperCase() + sectionName.slice(1)}\n\nNo information available.`;
+          }
+        }
+        
+        // For other sections - use enhanced prompts for LLMS-full.txt
+        // Extract relevant data for specific sections
+        if (sectionName === 'products') {
+          processedData.products = pages
+            .filter(page => {
+              const lowerTitle = page.title.toLowerCase();
+              const lowerUrl = page.url.toLowerCase();
+              return (lowerTitle.includes('product') || 
+                      lowerTitle.includes('feature') || 
+                      lowerUrl.includes('product') || 
+                      lowerUrl.includes('feature')) &&
+                     !page.isDocumentation;
+            })
+            .map(page => ({
+              name: page.title,
+              description: page.metaDescription || '',
+              url: page.url,
+              content: page.content ? page.content.substring(0, 2000) : '' // Include some content for better context
+            }));
+        } else if (sectionName === 'policies') {
+          processedData.policies = pages
+            .filter(page => {
+              const lowerTitle = page.title.toLowerCase();
+              const lowerUrl = page.url.toLowerCase();
+              return lowerTitle.includes('privacy') || 
+                     lowerTitle.includes('policy') || 
+                     lowerTitle.includes('terms') || 
+                     lowerTitle.includes('legal') ||
+                     lowerUrl.includes('privacy') || 
+                     lowerUrl.includes('policy') || 
+                     lowerUrl.includes('terms') || 
+                     lowerUrl.includes('legal');
+            })
+            .map(page => ({
+              title: page.title,
+              url: page.url,
+              description: page.metaDescription || ''
+            }));
+        }
+        
+        let prompt = '';
+        switch(sectionName) {
+          case 'mission':
+            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Mission Statement" section for an LLMS-full.txt file. This should be 2-3 detailed paragraphs that thoroughly explain:
+- The company's core purpose and vision
+- Long-term goals and objectives
+- Impact on their industry or market
+- Key values and principles
+- Unique approach or methodology
+
+IMPORTANT: DO NOT include explanatory notes or comments. Only include the actual content for the LLMS-full.txt file.
+
+WEBSITE DATA:
+${JSON.stringify(processedData, null, 2)}
+
+Generate ONLY the mission statement section, starting with "## Mission Statement".`;
+            break;
+          case 'products':
+            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS-full.txt file. This should be a comprehensive overview of the company's offerings, including:
+- Detailed descriptions of each major product or service
+- Key features and capabilities
+- Target markets or use cases
+- Any unique selling points or differentiators
+- Integration capabilities or ecosystem information
+- Technical specifications or requirements where relevant
+
+IMPORTANT: DO NOT include explanatory notes or comments. Only include the actual content for the LLMS-full.txt file.
+
+WEBSITE DATA:
+${JSON.stringify(processedData.products || [], null, 2)}
+
+Generate ONLY the products/services section, starting with "## Key Products/Services".`;
+            break;
+          case 'policies':
+            prompt = `Based on the following website data for ${companyName}, generate ONLY the "Policies" section for an LLMS-full.txt file. For each policy:
+- Include the full policy title
+- Add the complete URL
+- Add a brief (1 line) description of what the policy covers
+- Group related policies together (e.g., privacy-related, terms of service, etc.)
+- Note any recent updates or version information if available
+
+IMPORTANT: DO NOT include explanatory notes or comments. Only include the actual content for the LLMS-full.txt file.
+
+WEBSITE DATA:
+${JSON.stringify(processedData.policies || [], null, 2)}
+
+Generate ONLY the policies section, starting with "## Policies".`;
+            break;
+        }
+        
+        try {
+          const sectionResult = await model.generateContent(prompt);
+          return sectionResult.response.text();
+        } catch (error) {
+          await logActivity('error', `Error generating ${sectionName} section:`, {
+            errorMessage: error.message
+          });
+          return `## ${sectionName.charAt(0).toUpperCase() + sectionName.slice(1)}\n\nNo information available.`;
+        }
+      }
+      
+      // If we have multiple batches, consolidate them
+      if (contentArray.length === 1) {
+        return contentArray[0];
+      }
+      
+      // For multiple batches, consolidate with enhanced prompts
+      await logActivity('info', `Consolidating ${contentArray.length} batches for ${sectionName} section in LLMS-full.txt`);
+      
+      const consolidationPrompt = `Below are multiple versions of the "${sectionName}" section for an LLMS-full.txt file for ${companyName}. These were generated from different batches of pages from the website.
+
+Please create a single comprehensive version that:
+1. Combines all unique information from the versions below
+2. Removes any duplicates
+3. Organizes the information logically with clear structure
+4. Provides detailed descriptions and context
+5. Maintains a professional and informative tone
+6. Groups related information into subsections where appropriate
+
+${sectionName === 'links' ? 
+`CRITICAL REQUIREMENTS FOR LINKS SECTION:
+1. Include unique, real URLs from the versions below
+2. DO NOT modify URLs - use them EXACTLY as they appear
+3. Group links into clear categories (Documentation, API, Products, etc.)
+4. Provide context about each resource's purpose and audience
+5. Each link should be in the format "- [Link Title](URL): Detailed 1-2 line description"
+6. Prioritize specific, deep links over generic landing pages` : 
+'IMPORTANT: DO NOT include explanatory notes or comments about the consolidation process.'}
+
+DO NOT include any meta-commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
+
+Versions:
+${contentArray.map((content, i) => `\n--- VERSION ${i+1} ---\n${content}`).join('\n')}
+
+Create a single consolidated version of the "${sectionName}" section, starting with the same heading format as in the versions above.`;
+      
+      try {
+        const consolidatedResult = await model.generateContent(consolidationPrompt);
+        return consolidatedResult.response.text();
+      } catch (error) {
+        await logActivity('error', `Error consolidating ${sectionName} section:`, {
+          errorMessage: error.message
+        });
+        return contentArray.reduce((longest, current) => 
+          current.length > longest.length ? current : longest, contentArray[0]);
+      }
+    }
+    
+    // Consolidate each section from batches
+    await logActivity('info', 'Consolidating content from all batches for LLMS-full.txt');
+    const [missionSection, productsSection, linksSection, policiesSection] = await Promise.all([
+      consolidateSection('mission', contentBatches.mission),
+      consolidateSection('products', contentBatches.products),
+      consolidateSection('links', contentBatches.links),
+      consolidateSection('policies', contentBatches.policies)
+    ]);
+    
+    // Combine all sections
+    const fullContent = `# ${companyName}
+
+${missionSection}
+
+${productsSection}
+
+${linksSection}
+
+${policiesSection}`;
+
+    await logActivity('info', 'LLMS-full.txt content generation completed', {
+      contentLength: fullContent.length
+    });
+
+    return cleanMarkdownFormatting(fullContent);
+  } catch (error) {
+    console.error("Error in LLMS-full.txt generation:", error);
+    throw new Error(`Error generating content: ${error.message}`);
   }
 }
