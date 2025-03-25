@@ -1046,7 +1046,8 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
       { subdomain: 'help', label: 'Help Center' },
       { subdomain: 'support', label: 'Support Center' },
       { subdomain: 'community', label: 'Community' },
-      { subdomain: 'blog', label: 'Blog' }
+      { subdomain: 'blog', label: 'Blog' },
+      {subdomain: 'forum', label: 'Forum'}
     ];
     
     // Check all potential subdomains
@@ -1734,9 +1735,9 @@ function prioritizeLinks(links, websiteUrl, domainTracker) {
     if (lowerUrl.includes('/blog') || lowerText.includes('blog')) score += 4;
     
     // Prioritize policy pages
-    if (lowerUrl.includes('/privacy') || lowerText.includes('privacy')) score += 9;
-    if (lowerUrl.includes('/term') || lowerText.includes('term')) score += 9;
-    if (lowerUrl.includes('/legal') || lowerText.includes('legal')) score += 8;
+    if (lowerUrl.includes('/privacy') || lowerText.includes('privacy')) score += 6;
+    if (lowerUrl.includes('/term') || lowerText.includes('term')) score += 6;
+    if (lowerUrl.includes('/legal') || lowerText.includes('legal')) score += 6;
     
     // Special priority for navigation links
     if (link.isNavLink) {
