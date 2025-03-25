@@ -545,6 +545,7 @@ Generate ONLY the mission statement section, starting with "## Mission Statement
         const productsPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS-full.txt file. This should be a comprehensive overview of the company's main offerings, with subsections for each major product or service category.
 
 IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
+IMPORTANT: If there is no product or service information in the provided data, return an empty string. DO NOT generate a "no information available" message.
 
 WEBSITE DATA:
 ${JSON.stringify(processedData.products || [], null, 2)}
@@ -1274,9 +1275,13 @@ async function processPageBatch(batchPages, companyName, companyDescription, con
     }
     
     // Generate sections in parallel with conditional checks to avoid unnecessary API calls
-    const missionPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Mission Statement" section for an LLMS.txt file. This should be 1-2 sentences that explain the company's purpose and core objectives.
+    const missionPrompt = `Based on the following website data for ${companyName}, generate the "Mission Statement" section for an LLMS.txt file ONLY if there is content, making sure not to include "## Mission Statment" if this is the case. This should be 1-2 sentences that explain the company's purpose and core objectives.
 
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
+IMPORTANT: 
+1. DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
+2. If there is no missionn statement information in the provided data, return an empty string WITHOUT any section headers
+3. DO NOT include "## Mission Statement" if there is no content to display
+4. Only include the section header if you have actual mission statement information to share
 
 WEBSITE DATA:
 ${JSON.stringify(processedData, null, 2)}
@@ -1285,12 +1290,16 @@ Generate ONLY the mission statement section, starting with "## Mission Statement
     
     const productsPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS.txt file. This should be a brief overview of the company's main offerings.
 
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
+IMPORTANT: 
+1. DO NOT include explanatory notes or comments
+2. If there is no product or service information in the provided data, return an empty string WITHOUT any section headers
+3. DO NOT include "## Key Products/Services" if there is no content to display
+4. Only include the section header if you have actual product/service information to share
 
 WEBSITE DATA:
 ${JSON.stringify(processedData.products || [], null, 2)}
 
-Generate ONLY the products/services section, starting with "## Key Products/Services".`;
+Generate the products/services section, including the "## Key Products/Services" header ONLY if you have content.`;
     
     const linksPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS.txt file.
 
@@ -1310,6 +1319,12 @@ CRITICAL REQUIREMENTS FOR URL USAGE:
 11. DO NOT assume common website paths exist
 12. DO NOT use domain knowledge to guess URLs - only use URLs from the data
 
+IMPORTANT:
+1. Do NOT include "## Important Links" if there is no content to display
+2. If there is no important links in the provided data, return an empty string WITHOUT any section headers
+3. DO NOT include "## Important Links" if there is no content to display
+4. Only include the section header if you have actual important links to share
+
 WEBSITE DATA:
 ${JSON.stringify(processedData.pages || [], null, 2)}
 
@@ -1317,7 +1332,11 @@ Generate ONLY the links section, starting with "## Important Links".`;
     
     const policiesPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Policies" section for an LLMS.txt file. List each policy as a title followed by its URL.
 
-IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
+IMPORTANT: 
+1. DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
+2. If there is no policy information in the provided data, return an empty string WITHOUT any section headers
+3. DO NOT include "## Policies" if there is no content to display
+4. Only include the section header if you have actual policy information to share
 
 WEBSITE DATA:
 ${JSON.stringify(processedData.policies || [], null, 2)}
@@ -1801,6 +1820,7 @@ Generate ONLY the mission statement section, starting with "## Mission Statement
             prompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS-full.txt file. This should be a comprehensive overview of the company's main offerings, with subsections for each major product or service category.
 
 IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS-full.txt file.
+IMPORTANT: If there is no product or service information in the provided data, return an empty string. DO NOT generate a "no information available" message.
 
 WEBSITE DATA:
 ${JSON.stringify(processedData.products || [], null, 2)}
@@ -1922,17 +1942,15 @@ Create a single consolidated version of the "${sectionName}" section, starting w
     ]);
     
     // Combine all sections
-    const fullContent = `# ${companyName}
-
-${missionSection}
-
-${productsSection}
-
-${linksSection}
-
-${policiesSection}
-
-${valuesSection}`;
+    const fullContent = `# ${companyName}${
+      hasSectionContent(missionSection) ? `\n\n${missionSection}` : ''
+    }${
+      hasSectionContent(productsSection) ? `\n\n${productsSection}` : ''
+    }${
+      hasSectionContent(linksSection) ? `\n\n${linksSection}` : ''
+    }${
+      hasSectionContent(policiesSection) ? `\n\n${policiesSection}` : ''
+    }`;
 
     await logActivity('info', 'LLMS-full.txt content generation completed', {
       contentLength: fullContent.length
@@ -2725,6 +2743,7 @@ Generate ONLY the mission statement section, starting with "## Mission Statement
             prompt = `Based on the following website data for ${companyName}, generate ONLY the "Key Products/Services" section for an LLMS.txt file. This should be an overview of the company's main offerings.
 
 IMPORTANT: DO NOT include explanatory notes or comments about how you improved the content. DO NOT include any bullet points describing your organization methods or any other meta commentary about the improvements made. Only include the actual content for the LLMS.txt file.
+IMPORTANT: If there is no product or service information in the provided data, return an empty string. DO NOT generate a "no information available" message.
 
 WEBSITE DATA:
 ${JSON.stringify(processedData.products || [], null, 2)}
@@ -2833,3 +2852,10 @@ ${policiesSection}`;
     throw new Error(`Error generating content: ${error.message}`);
   }
 } 
+
+// Helper function to check if a section has actual content beyond just the header
+function hasSectionContent(section) {
+  if (!section) return false;
+  const withoutHeader = section.replace(/^## [^\n]+\n*/g, '').trim();
+  return withoutHeader.length > 0;
+}
