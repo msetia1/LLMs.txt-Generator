@@ -10,6 +10,48 @@ const path = require('path');
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
 
+// Create logs directory if it doesn't exist
+const logsDir = path.join(__dirname, '../../../logs');
+fs.mkdir(logsDir, { recursive: true }).catch(console.error);
+
+// Get current date for log file name
+function getLogFileName() {
+  const now = new Date();
+  return path.join(logsDir, `llms-generator-${now.toISOString().split('T')[0]}.log`);
+}
+
+/**
+ * Format a log message with timestamp and metadata
+ * @param {string} level - Log level
+ * @param {string} message - Message to log
+ * @param {Object} data - Optional data to include
+ * @returns {string} - Formatted log message
+ */
+function formatLogMessage(level, message, data = null) {
+  const timestamp = new Date().toISOString();
+  let logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+  
+  if (data) {
+    try {
+      // Special handling for Gemini inputs/outputs
+      if (data.completePrompt) {
+        logMessage += '\n[GEMINI INPUT]\n' + data.completePrompt + '\n------------------------';
+      }
+      else if (data.completeResponse) {
+        logMessage += '\n[GEMINI OUTPUT]\n' + data.completeResponse + '\n------------------------';
+      }
+      else {
+        const dataStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        logMessage += '\n' + dataStr;
+      }
+    } catch (error) {
+      logMessage += '\nError stringifying data: ' + error.message;
+    }
+  }
+  
+  return logMessage + '\n';
+}
+
 /**
  * Enhanced logging system for LLMS generator
  * @param {string} level - Log level (info, warn, error, debug)
@@ -17,7 +59,17 @@ const genAI = new GoogleGenerativeAI(apiKey);
  * @param {Object} [data] - Optional data to include in log
  */
 async function logActivity(level, message, data = null) {
-  // Only log specific types of information
+  const logMessage = formatLogMessage(level, message, data);
+  const logFile = getLogFileName();
+  
+  // Write to file
+  try {
+    await fs.appendFile(logFile, logMessage);
+  } catch (error) {
+    console.error('Error writing to log file:', error);
+  }
+  
+  // Write to console based on type
   if (message.includes('Visiting page:')) {
     console.log(`[CRAWL] ${message}`);
   } 
@@ -35,6 +87,13 @@ async function logActivity(level, message, data = null) {
     console.error(`[ERROR] ${message}`);
     if (data && data.errorMessage) {
       console.error(data.errorMessage);
+    }
+  }
+  else {
+    // For all other cases, write to console with level
+    console.log(`[${level.toUpperCase()}] ${message}`);
+    if (data) {
+      console.log(data);
     }
   }
 }
@@ -58,19 +117,31 @@ function getGeminiModel(modelType = 'standard') {
     topK: 40
   };
   
-  // Use Pro model for advanced tasks (like LLMS-full.txt generation)
-  if (modelType === 'advanced') {
-    return genAI.getGenerativeModel({ 
-      model: "gemini-2.0-flash",
-      generationConfig: advancedConfig
-    });
-  }
-  
-  // Use standard model for regular tasks (like LLMS.txt generation)
-  return genAI.getGenerativeModel({ 
+  // Create base model
+  const config = modelType === 'advanced' ? advancedConfig : standardConfig;
+  const baseModel = genAI.getGenerativeModel({ 
     model: "gemini-2.0-flash",
-    generationConfig: standardConfig
+    generationConfig: config
   });
+  
+  // Wrap the generateContent method to add logging
+  const originalGenerateContent = baseModel.generateContent.bind(baseModel);
+  baseModel.generateContent = async function(prompt) {
+    
+    try {
+      const response = await originalGenerateContent(prompt);
+      return response;
+    } catch (error) {
+      // Log any errors
+      await logActivity('error', 'Gemini API Error', {
+        errorMessage: error.message,
+        prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt, null, 2)
+      });
+      throw error;
+    }
+  };
+  
+  return baseModel;
 }
 
 /**
@@ -834,7 +905,7 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
     policies: []
   };
   
-  const MAX_PAGES_TO_VISIT = 10;
+  const MAX_PAGES_TO_VISIT = 30;
   const MAX_DEPTH = 2; // Maximum depth from homepage
   const BATCH_SIZE = 50;
   
@@ -1047,7 +1118,7 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
       
       // Process this batch for content if we have successful pages
       if (successfulPages.length > 0) {
-        await processPageBatch(successfulPages, companyName, companyDescription, contentBatches);
+        await processPageBatch(successfulPages, companyName, companyDescription, contentBatches, BATCH_SIZE);
       }
       
       // Re-evaluate the remaining links and rebuild future batches
@@ -1107,8 +1178,9 @@ async function crawlWebsiteStandard(websiteUrl, companyName, companyDescription)
  * @param {string} companyName - Company name
  * @param {string} companyDescription - Company description
  * @param {Object} contentBatches - Object containing arrays for content batches
+ * @param {number} BATCH_SIZE - Number of pages to process in each batch
  */
-async function processPageBatch(batchPages, companyName, companyDescription, contentBatches) {
+async function processPageBatch(batchPages, companyName, companyDescription, contentBatches, BATCH_SIZE) {
   if (batchPages.length === 0) return;
   
   await logActivity('info', `Processing batch of ${batchPages.length} pages for incremental content generation`);
@@ -1121,7 +1193,7 @@ async function processPageBatch(batchPages, companyName, companyDescription, con
     const processedData = {
       companyName,
       companyDescription,
-      pages: batchPages.slice(0, 100).map(page => ({
+      pages: batchPages.slice(0, BATCH_SIZE).map(page => ({
         title: page.title,
         metaDescription: page.metaDescription || '',
         headings: page.headings || [],
@@ -1221,15 +1293,21 @@ Generate ONLY the products/services section, starting with "## Key Products/Serv
     
     const linksPrompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS.txt file.
 
-This section MUST include AT LEAST 25-30 different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- [Link Title](URL): 1 line description about the link" on its own line.
+This section MUST include different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- [Link Title](URL): 1 line description about the link" on its own line.
 
-IMPORTANT REQUIREMENTS:
-1. You MUST include AT LEAST 25-30 unique links from the provided data
-2. DO NOT repeat the same URL for different entries
-3. DO NOT use placeholder URLs - use ONLY actual URLs from the provided data
-4. Include links from different sections of the website (documentation, products, blog, etc.)
-5. If some links appear multiple times in the data, only include each unique URL once with the best description
-6. DO NOT include explanatory notes or meta-commentary
+CRITICAL REQUIREMENTS FOR URL USAGE:
+1. ONLY use complete URLs that are EXPLICITLY present in the provided website data
+2. DO NOT include a link if you only have the text/title but no corresponding URL
+3. DO NOT default to using the base domain (${companyName}.com) when you're unsure of the URL
+4. DO NOT create, infer, or guess any URLs, even if they seem logical (like /about, /careers, etc.)
+5. If a page is mentioned in text but has no explicit URL, SKIP it entirely
+6. Better to have fewer legitimate links than to include any incorrect or assumed URLs
+7. Each URL must be verifiably present in the provided website data as a complete URL
+8. Each URL must only be used once in the entire links section
+9. DO NOT create, infer, or guess any URLs, even if they seem logical (like /about, /careers, etc.)
+10. DO NOT modify existing URLs or create new URL paths
+11. DO NOT assume common website paths exist
+12. DO NOT use domain knowledge to guess URLs - only use URLs from the data
 
 WEBSITE DATA:
 ${JSON.stringify(processedData.pages || [], null, 2)}
@@ -2168,10 +2246,10 @@ function createDomainTracker(baseUrl) {
           }
           
           // Limit other subdomains to avoid crawling too broadly
-          if (this.relatedSubdomains.size < 10) {
-            this.relatedSubdomains.add(hostname);
-            return true;
-          }
+          // if (this.relatedSubdomains.size < 10) {
+          //   this.relatedSubdomains.add(hostname);
+          //   return true;
+          // }
         }
         
         return false;
@@ -2210,7 +2288,6 @@ function createDomainTracker(baseUrl) {
       }
     },
     
-    // Add this new method to fix the error
     getRelatedDomains() {
       // Combine all domain types into one set and return
       const allDomains = new Set([...this.domainVariants, ...this.relatedSubdomains]);
@@ -2560,11 +2637,11 @@ async function generateLLMSBatchedContent(crawlResults, companyName, companyDesc
           // IMPROVED: Enhanced prompt to emphasize using real URLs
           const prompt = `Based on the following website data for ${companyName}, generate ONLY the "Important Links" section for an LLMS.txt file.
 
-This section MUST include AT LEAST 25-30 different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- Link Description: URL" on its own line.
+This section MUST include different, real URLs from the company website, carefully organized into logical categories. Each link should be in the format "- Link Description: URL" on its own line.
 
 CRITICAL REQUIREMENTS:
 1. You MUST ONLY use the EXACT URLs provided in the data below - DO NOT modify them or create placeholder URLs
-2. Include AT LEAST 25-30 unique links from the data (more if available)
+2. Include unique links from the data (more if available)
 3. DO NOT repeat the same URL for different entries
 4. NEVER use generic URLs like "https://domain.com/" when more specific URLs are available
 5. Include links from all available categories in the data (documentation, products, blog, etc.)
@@ -2697,7 +2774,7 @@ Please create a single comprehensive version that:
 
 ${sectionName === 'links' ? 
 `CRITICAL REQUIREMENTS FOR LINKS SECTION:
-1. Include AT LEAST 25-30 different, real URLs from the versions below
+1. Include unique, real URLs from the versions below
 2. DO NOT modify URLs - use them EXACTLY as they appear in the versions below
 3. NEVER replace specific URLs with generic domain URLs (like changing https://docs.example.com/specific-page to https://example.com/)
 4. DO NOT repeat the same URL for different entries
