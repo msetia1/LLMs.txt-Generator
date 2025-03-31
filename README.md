@@ -1,6 +1,6 @@
 # LLMs.txt Generator
 
-A tool for AI startups to quickly generate an accurate, comprehensive LLMs.txt file for their website.
+A tool for AI startups to quickly generate an accurate, comprehensive llms.txt and llms-full.txt file for their website.
 
 ## Overview
 
@@ -10,7 +10,7 @@ The LLMs.txt Generator helps AI startups create a valid LLMs.txt file that follo
 
 - Simple web form for entering company information
 - Website crawler to automatically discover important pages
-- Generation of valid LLMs.txt files
+- Generation of valid llms.txt files
 - Option to generate a more comprehensive llms-full.txt file
 - Copy-to-clipboard functionality
 - Error handling and loading indicators
