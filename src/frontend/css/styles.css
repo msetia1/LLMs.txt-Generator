@@ -236,6 +236,8 @@ h3 {
 
 .result-container {
     display: flex; /* Always visible */
+    max-width: 600px;
+    width: 100%;
 }
 
 .result-placeholder {

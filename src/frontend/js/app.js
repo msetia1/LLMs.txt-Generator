@@ -250,8 +250,7 @@ async function submitFormData(data) {
             resultContent.innerHTML = `
                 <div class="email-notification">
                     <h3>Request Received</h3>
-                    <p>Your llms-full.txt file is being generated.<br>You'll receive an email once it's ready.</p>
-                    <h3>${data.email}</h3>
+                    <p>Your llms-full.txt file is being generated and will be sent to ${data.email}. <br>You'll receive an email once it's ready.</p>
                 </div>
             `;
             resultContent.classList.add('has-content');
