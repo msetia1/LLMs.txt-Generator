@@ -2103,7 +2103,32 @@ Generate ONLY the policies section, starting with "## Policies".`;
         await logActivity('info', `Total URLs across all batches: ${allLinks.length}`);
         await logActivity('info', `Unique URLs across all batches: ${uniqueLinks.length}`);
         
-        // Categorize links (similar to the existing categorization logic)
+        // Filter out policy links first
+        const nonPolicyLinks = uniqueLinks.filter(link => {
+          try {
+            const url = new URL(link.url);
+            const path = url.pathname.toLowerCase();
+            const text = link.text.toLowerCase();
+            
+            const isPolicyLink = path.includes('/terms') || path.includes('/privacy') || 
+                                path.includes('/cookie') || path.includes('/legal') || 
+                                path.includes('/copyright') || path.includes('/tos') || 
+                                path.includes('/dmca') || path.includes('/copyright-policy') || 
+                                path.includes('/privacy-policy') || path.includes('/terms-of-service') || 
+                                path.includes('/terms-of-use') || path.includes('/legal-notice') || 
+                                path.includes('/legal-disclaimer') || path.includes('/legal-terms') || 
+                                path.includes('/legal-policy') || text.includes('terms') || 
+                                text.includes('privacy') || text.includes('cookie') || 
+                                text.includes('legal') || text.includes('copyright') || 
+                                text.includes('tos') || text.includes('dmca');
+            
+            return !isPolicyLink;
+          } catch (e) {
+            return true; // Include links that can't be parsed in the general category
+          }
+        });
+
+        // Initialize categorized links
         const categorizedLinks = {
           documentation: [],
           products: [],
@@ -2114,8 +2139,9 @@ Generate ONLY the policies section, starting with "## Policies".`;
           technical: [],
           general: []
         };
-        
-        uniqueLinks.forEach(link => {
+
+        // Then categorize the remaining links
+        nonPolicyLinks.forEach(link => {
           try {
             const url = new URL(link.url);
             const path = url.pathname.toLowerCase();
@@ -2238,7 +2264,7 @@ Generate ONLY the policies section, starting with "## Policies".`;
 
 Please create a single comprehensive version that:
 1. Combines all unique information from the versions below
-2. Removes any duplicates
+2. Removes any duplicate links from the links section
 3. Organizes the information logically
 4. Formats it appropriately for an LLMS-full.txt file
 5. Ensures it's clear and concise
