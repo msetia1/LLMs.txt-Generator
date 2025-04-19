@@ -17,6 +17,8 @@ const errorHandler = require('./utils/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set('trust proxy', 1);
+
 // Apply middleware
 app.use(helmet()); // Security headers
 app.use(cors({
@@ -62,6 +64,10 @@ app.use((req, res, next) => {
     res.setTimeout(600000);
     next();
 });
+
+app.get('/', (req, res) => {
+    res.send('llms.txt generator api - visit /api for endpoints')
+})
 
 // Routes
 app.use('/api', llmsRoutes);

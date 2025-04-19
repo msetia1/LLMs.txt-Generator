@@ -11,7 +11,7 @@ const apiKey = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
 
 // Create logs directory if it doesn't exist
-const logsDir = path.join(__dirname, '../../../logs');
+const logsDir = path.join(__dirname, '../logs');
 fs.mkdir(logsDir, { recursive: true }).catch(console.error);
 
 // Get current date for log file name
