@@ -1,0 +1,66 @@
+# Cursor
+
+## Mission Statement
+To empower developers with AI-powered tools that significantly increase productivity and efficiency in software development, dramatically enhancing coding efficiency.
+
+## Key Products/Services
+
+AI Code Editor
+
+## Important Links
+
+- [Get Started](https://docs.cursor.com/get-started/welcome): Learn about Cursor's core features and get started with installation.
+- [Introduction](https://docs.cursor.com/get-started/introduction): Learn about Cursor's core AI features, settings, and customization options for powerful code development.
+- [Installation](https://docs.cursor.com/get-started/installation): Guide to installing Cursor, configuring initial settings, and migrating from other code editors.
+- [FAQ](https://docs.cursor.com/faq): Common questions about language support, models, project limits, and data management in Cursor with troubleshooting help.
+- [Community Forum](https://forum.cursor.com/): Discuss Cursor bugs, feedback, and ideas with other users.
+- [Cursor Forum Guidelines](https://forum.cursor.com/guidelines): A place to discuss Cursor (bugs, feedback, ideas, etc.).
+- [Sign in](https://authenticator.cursor.sh/?clientid=client01GS6W3C96KW4WRS6Z93JCE2RJ&redirecturi=https%3A%2F%2Fcursor.com%2Fapi%2Fauth%2Fcallback&responsetype=code&state=%257B%2522returnTo%2522%253A%2522%252Fsettings%2522%257D&authorizationsessionid=01JS8E3YH86G85PPJ2MGH7NK38): Access your Cursor account.
+- [Features](https://www.cursor.com/features): Explore Cursor's AI-powered features, including Agent, Tab, and Chat.
+- [Home Page](https://www.cursor.com/): Learn more about Cursor and its capabilities.
+- [Blog](https://www.cursor.com/blog): Read articles and insights from the Cursor team.
+- [Iterating with Shadow Workspaces](https://www.cursor.com/blog/shadow-workspace): Learn about Cursor's shadow workspace implementation.
+- [Changelog](https://www.cursor.com/changelog): View the latest updates and improvements to Cursor.
+- [Cursor Changelog: Instant Applies, Docs Management](https://www.cursor.com/changelog/instant-applies-docs-management): Changelog for July 3, 2024 update.
+- [Cursor Changelog: Better Docs Management, Staged Rollouts](https://www.cursor.com/changelog/better-docs-management-staged-rollouts): Changelog for September 8, 2023 update.
+- [Cursor Changelog: Docs updates](https://www.cursor.com/changelog/docs-updates): Changelog for September 5, 2023 update.
+- [Cursor Changelog: Agents, new docs](https://www.cursor.com/changelog/agents-new-docs): Changelog for July 6, 2023 update.
+- [Cursor Changelog: Show the AI documentation](https://www.cursor.com/changelog/show-the-ai-documentation): Changelog for June 9, 2023 update.
+- [Pricing](https://www.cursor.com/pricing): Explore Cursor's pricing plans and options.
+- [Enterprise](https://www.cursor.com/enterprise): Discover Cursor's enterprise solutions for development teams.
+- [Downloads](https://www.cursor.com/downloads): Download the latest version of Cursor for your platform.
+- [Privacy Policy](https://www.cursor.com/privacy): Understand Cursor's data collection and usage practices.
+- [Terms of Service](https://www.cursor.com/terms-of-service): Review the terms and conditions for using Cursor.
+- [Security](https://www.cursor.com/security): Learn about Cursor's security practices and certifications.
+- [AI Commit Message](https://docs.cursor.com/more/ai-commit-message): Learn how to generate contextual Git commit messages automatically using Cursor's sparkle icon or shortcuts.
+- [Notepads (Beta)](https://docs.cursor.com/beta/notepads): A guide to using Notepads in Cursor for sharing context between Composers and Chat interactions.
+- [Keyboard Shortcuts](https://docs.cursor.com/kbd): Complete reference for all keyboard shortcuts in Cursor, including Chat, Tab, Terminal and code selection commands.
+- [Codebase Indexing](https://docs.cursor.com/context/codebase-indexing): Learn how to index your codebase in Cursor for more accurate AI assistance and search results.
+- [Rules](https://docs.cursor.com/context/rules): Control how the Agent model behaves with reusable, scoped instructions.
+- [Ignore Files](https://docs.cursor.com/context/ignore-files): Control which files Cursor's AI features and indexing can access using .cursorignore and .cursorindexingignore.
+- [Model Context Protocol](https://docs.cursor.com/context/model-context-protocol): Connect external tools and data sources to Cursor using the Model Context Protocol (MCP) plugin system.
+- [Plans & Usage](https://docs.cursor.com/account/plans-and-usage): Guide to Cursor usage tiers, request types, quotas, and billing options for premium models and team accounts.
+- [Dashboard](https://docs.cursor.com/account/dashboard): Learn how to manage billing, usage pricing, and team settings in the dashboard for different plans.
+- [Billing](https://docs.cursor.com/account/billing): Complete guide to managing Cursor billing: subscriptions, refunds, cycles and access through Stripe portal.
+- [Privacy & Security](https://docs.cursor.com/account/privacy): Guide to Cursor's privacy settings, data handling, and code indexing with Privacy Mode option.
+- [Cursor Business Team Setup](https://docs.cursor.com/account/teams/setup): Guide to create and manage Cursor business teams with SSO, enterprise features, and MDM deployment options.
+- [Models](https://docs.cursor.com/settings/models): Comprehensive guide to Cursor's models: features, pricing, context windows, and hosting details for Chat and CMD+K.
+- [Custom API Keys](https://docs.cursor.com/settings/api-keys): Configure custom API keys for OpenAI, Anthropic, Google and Azure to use your own LLM provider accounts in Cursor.
+- [Early Access Program](https://docs.cursor.com/settings/beta): Learn how to join Cursor's Early Access Program to test experimental features and provide feedback.
+- [Common Issues](https://docs.cursor.com/troubleshooting/common-issues): Guide to resolving common Cursor issues including networking, resource usage, SSH connections, and general FAQs.
+- [Troubleshooting Guide](https://docs.cursor.com/troubleshooting/troubleshooting-guide): Guide to troubleshooting common Cursor issues, resetting app data, and submitting detailed bug reports.
+- [Getting a Request ID](https://docs.cursor.com/troubleshooting/request-reporting): Learn how to find and share request IDs in Cursor for better technical support and issue reporting.
+- [Cursor Tab Overview](https://docs.cursor.com/tab/overview): Learn how Tab uses AI to suggest multi-line edits, code fixes, and context-aware completions directly in the editor.
+- [Cursor Chat Overview](https://docs.cursor.com/chat/overview): Natural language interface for exploring, editing, and managing code with contextual AI assistance in Chat mode.
+- [Cursor Cmd/Ctrl K Overview](https://docs.cursor.com/cmdk/overview): Learn how to use Cmd/Ctrl K in Cursor to generate, edit code and ask questions with the Prompt Bar.
+- [Cursor Chat Agent Mode](https://docs.cursor.com/chat/agent): Autonomous AI coding agent that independently explores, plans, and executes complex codebase changes with full tools.
+- [Cursor Chat Ask Mode](https://docs.cursor.com/chat/ask): Ask mode lets you explore and learn about codebases through AI search and queries without making changes.
+- [Cursor Custom Modes](https://docs.cursor.com/chat/custom-modes): Create custom Cursor modes with tailored tools and prompts to personalize AI assistance for specific workflows.
+- [Cursor Tab vs GitHub Copilot](https://docs.cursor.com/tab/from-gh-copilot): Compares Cursor's multi-line edits and instruction-based completions to GitHub Copilot's single-line insertions.
+- [Cursor @ Symbols Overview](https://docs.cursor.com/context/@-symbols/overview): Guide to using @ symbols in Cursor for referencing code, files, documentation and other context in chats.
+
+## Policies
+
+Privacy Policy: https://www.cursor.com/privacy
+Terms of Service: https://www.cursor.com/terms-of-service
+Privacy & Security: https://docs.cursor.com/account/privacy

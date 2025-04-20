@@ -5,10 +5,13 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const Queue = require('bull');
 
 // Import routes
 const llmsRoutes = require('./routes/llms');
 const adminRoutes = require('./routes/admin');
+const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
+const llmsQueue = new Queue('llms-generation', REDIS_URL);
 
 // Import custom error handler
 const errorHandler = require('./utils/errorHandler');
@@ -17,6 +20,7 @@ const errorHandler = require('./utils/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set('llmsQueue', llmsQueue);
 app.set('trust proxy', 1);
 
 // Apply middleware
@@ -97,17 +101,23 @@ server.keepAliveTimeout = 600000;
 server.headersTimeout = 600000;
 
 process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received: closing HTTP server');
-    server.close(() => {
-        console.log('HTTP server closed');
+    console.log('SIGTERM signal received: closing HTTP server and queue');
+    Promise.all([
+        new Promise(resolve => server.close(resolve)),
+        llmsQueue.close()
+    ]).then(() => {
+        console.log('HTTP server and queue closed');
         process.exit(0);
     });
 });
 
 process.on('SIGINT', () => {
-    console.log('SIGINT signal received: closing HTTP server');
-    server.close(() => {
-        console.log('HTTP server closed');
+    console.log('SIGINT signal received: closing HTTP server and queue');
+    Promise.all([
+        new Promise(resolve => server.close(resolve)),
+        llmsQueue.close()
+    ]).then(() => {
+        console.log('HTTP server and queue closed');
         process.exit(0);
     });
 });
